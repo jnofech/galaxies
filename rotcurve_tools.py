@@ -179,7 +179,7 @@ def rotcurve_smooth(R,vrot,R_e,vrot_e=None,smooth='spline',knots=8):
         # BSpline interpolation of vrot_b(R)
         K=3                # Order of the BSpline
         t,c,k = interpolate.splrep(R,vrot_b,s=0,k=K)
-        vrot = interpolate.BSpline(t,c,k, extrapolate=True)  # Now it's a function.
+        vrot = interpolate.BSpline(t,c,k, extrapolate=False)  # Now it's a function.
     elif smooth.lower()=='universal':
         def vcirc_universal(r, *pars):
             '''
@@ -199,7 +199,7 @@ def rotcurve_smooth(R,vrot,R_e,vrot_e=None,smooth='spline',knots=8):
         # BSpline interpolation of vrot_u(R)
         K=3                # Order of the BSpline
         t,c,k = interpolate.splrep(R,vrot_u,s=0,k=K)
-        vrot = interpolate.BSpline(t,c,k, extrapolate=True)  # Now it's a function.
+        vrot = interpolate.BSpline(t,c,k, extrapolate=False)  # Now it's a function.
     elif smooth.lower() in ['simple','exponential','expo']:
         def vcirc_simple(r, *pars):
             '''
@@ -217,7 +217,7 @@ def rotcurve_smooth(R,vrot,R_e,vrot_e=None,smooth='spline',knots=8):
         # BSpline interpolation of vrot_u(R)
         K=3                # Order of the BSpline
         t,c,k = interpolate.splrep(R,vrot_s,s=0,k=K)
-        vrot = interpolate.BSpline(t,c,k, extrapolate=True)  # Now it's a function.
+        vrot = interpolate.BSpline(t,c,k, extrapolate=False)  # Now it's a function.
     else:
         raise ValueError('Invalid smoothing mode.')
     

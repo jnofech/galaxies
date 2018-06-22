@@ -392,7 +392,7 @@ def beta_and_depletion_clean(beta,depletion,rad=None,stride=1):
     else:
         return beta,depletion
 
-def sigmas(gal,hdr=None,beam=None,I_mom0=None,I_tpeak=None,alpha=6.7,mode=''):
+def sigmas(gal,hdr=None,beam=None,I_mom0=None,I_tpeak=None,alpha=6.7,mode='',sigmode=''):
     '''
     Returns things like 'sigma' (line width, in km/s)
     or 'Sigma' (surface density) for a galaxy. The
@@ -422,6 +422,15 @@ def sigmas(gal,hdr=None,beam=None,I_mom0=None,I_tpeak=None,alpha=6.7,mode=''):
     alpha=6.7 : float
         CO(2-1) to H2 conversion factor,
         in (Msun pc^-2) / (K km s^-1).
+    mode='' : str
+        'PHANGS'     - Uses PHANGS rotcurve.
+                       (DEFAULT)
+        'diskfit12m' - Uses fitted rotcurve from
+                        12m+7m data.        
+        'diskfit7m'  - Uses fitted rotcurve from
+                        7m data.
+        This determines the min and max
+        values of the output 'rad' array.
     mode='' : str
         'sigma' - returns linewidth.
         'Sigma' - returns H2 surface density.
@@ -455,8 +464,11 @@ def sigmas(gal,hdr=None,beam=None,I_mom0=None,I_tpeak=None,alpha=6.7,mode=''):
     if I_tpeak is None:
         print('galaxytools.sigmas(): I_tpeak found automatically.')
         I_tpeak = tpeak_get(gal)
-        
-    x, rad, x, x = gal.rotmap(header=hdr)
+    
+    if mode=='':
+        print('WARNING: No \'mode\' selected for galaxytools.sigmas()!\n        Will determine min and max \'rad\' values using PHANGS rotcurve.')
+        mode='PHANGS'
+    x, rad, x, x = gal.rotmap(header=hdr,mode=mode)
     d = gal.distance
     d = d.to(u.pc)                                          # Converts d from Mpc to pc.
 
@@ -476,9 +488,9 @@ def sigmas(gal,hdr=None,beam=None,I_mom0=None,I_tpeak=None,alpha=6.7,mode=''):
     sigma = I_mom0 / (np.sqrt(2*np.pi) * I_tpeak)
     Sigma = alpha*I_mom0   # (???) Units: Msun pc^-2
     
-    if mode=='sigma':
+    if sigmode=='sigma':
         return rad, sigma
-    elif mode=='Sigma':
+    elif sigmode=='Sigma':
         return rad, Sigma
     else:
         print( "SELECT A MODE.")
