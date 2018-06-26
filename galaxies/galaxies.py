@@ -288,9 +288,9 @@ class Galaxy(object):
 
         return self.center_position.to_pixel(wcs)
 
-    def rotcurve(self,mode='PHANGS',
+    def rotcurve(self,mode='',
                  #rcdir='/mnt/bigdata/PHANGS/OtherData/derived/Rotation_curves/'):
-                 rcdir='/media/jnofech/BigData/galaxies/rotcurves/'):
+                 rcdir='/media/jnofech/BigData/PHANGS/OtherData/derived/Rotation_curves/'):
         '''
         Reads a provided rotation curve table and
         returns interpolator functions for rotational
@@ -321,11 +321,11 @@ class Galaxy(object):
 
         # Basic info
         d = (self.distance).to(u.parsec)                  # Distance to galaxy, from Mpc to pc
-            
-        rcdir_jnofech = '/media/jnofech/BigData/galaxies/rotcurves/'    # Joseph's main rotcurve directory,
-                                                                        #   including the ones on the server.
         
         # Rotation Curves
+        if mode.lower() not in ['phangs','diskfit12m','diskfit7m']:
+            print('WARNING: Invalid \'mode\' selected for Galaxy.rotcurve()!\n        Will use PHANGS rotcurve.')
+            mode='PHANGS'
         if mode.lower()=='phangs':
             if self.name.lower()=='m33':
                 m33 = pd.read_csv('notphangsdata/m33_rad.out_fixed.csv')
@@ -334,7 +334,7 @@ class Galaxy(object):
                 vrot_e = None
                 print( "WARNING: M33 rotcurve error bars not accounted for!")
             else:
-                fname = rcdir+(rcdir==rcdir_jnofech)*'phangs/'+self.name.lower()+"_co21_12m+7m+tp_RC.txt"
+                fname = rcdir+self.name.lower()+"_co21_12m+7m+tp_RC.txt"
                 R, vrot, vrot_e = np.loadtxt(fname,skiprows=True,unpack=True)
         elif mode.lower()=='diskfit12m':
             fname = rcdir+'diskfit12m/'+self.name.lower()+"_co21_12m+7m_RC.txt"    # Not on server.
@@ -342,8 +342,7 @@ class Galaxy(object):
         elif mode.lower()=='diskfit7m':
             fname = rcdir+'diskfit7m/'+self.name.lower()+"_co21_7m_RC.txt"         # Not on server.
             R, vrot, vrot_e = np.loadtxt(fname,skiprows=True,unpack=True)
-        else:
-            raise ValueError("'mode' must be PHANGS, diskfit12m, or diskfit7m!")
+
             
             # R = Radius from center of galaxy, in arcsec.
             # vrot = Rotational velocity, in km/s.

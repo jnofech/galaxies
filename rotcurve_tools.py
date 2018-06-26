@@ -16,9 +16,9 @@ import pandas as pd
 import galaxytools as tools
 
 
-def rotcurve(gal,mode='PHANGS',
+def rotcurve(gal,mode='',
 #              rcdir='/mnt/bigdata/PHANGS/OtherData/derived/Rotation_curves/'):
-             rcdir='/media/jnofech/BigData/galaxies/rotcurves/'):
+             rcdir='/media/jnofech/BigData/PHANGS/OtherData/derived/Rotation_curves/'):
     '''
     Reads a provided rotation curve table and
     returns interpolator functions for rotational
@@ -30,7 +30,7 @@ def rotcurve(gal,mode='PHANGS',
     gal : str OR Galaxy
         Name of galaxy, OR Galaxy
         object.
-    mode='PHANGS' : str
+    mode='' : str
         'PHANGS'     - Uses PHANGS rotcurve.
         'diskfit12m' - Uses fitted rotcurve from
                         12m+7m data.        
@@ -62,9 +62,12 @@ def rotcurve(gal,mode='PHANGS',
 
     d = (gal.distance).to(u.parsec)                  # Distance to galaxy, from Mpc to pc   
     
-    rcdir_jnofech = '/media/jnofech/BigData/galaxies/rotcurves/'     # Joseph's main rotcurve directory,
-                                                                     #   including the ones on the server.
+    rcdir_jnofech = '/media/jnofech/BigData/PHANGS/OtherData/derived/Rotation_curves/'
+                                                                     # Joseph's main rotcurve directory.
     # Rotation Curves
+    if mode.lower() not in ['phangs','diskfit12m','diskfit7m']:
+        print('WARNING: Invalid \'mode\' selected for rotcurve_tools.rotcurve()!\n        Will use PHANGS rotcurve.')
+        mode='PHANGS'
     if mode.lower()=='phangs':
         if gal.name.lower()=='m33':
             m33 = pd.read_csv('notphangsdata/m33_rad.out_fixed.csv')
@@ -73,7 +76,7 @@ def rotcurve(gal,mode='PHANGS',
             vrot_e = None
             print( "WARNING: M33 rotcurve error bars not accounted for!")
         else:
-            fname = rcdir+(rcdir==rcdir_jnofech)*'phangs/'+name.lower()+"_co21_12m+7m+tp_RC.txt"
+            fname = rcdir+name.lower()+"_co21_12m+7m+tp_RC.txt"
             R, vrot, vrot_e = np.loadtxt(fname,skiprows=True,unpack=True)
     elif mode.lower()=='diskfit12m':
         fname = rcdir+'diskfit12m/'+name.lower()+"_co21_12m+7m_RC.txt"    # Not on server.

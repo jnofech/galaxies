@@ -18,7 +18,7 @@ import rotcurve_tools as rc
 import copy
 import os
 
-def mom0_get(gal,data_mode='12m'):
+def mom0_get(gal,data_mode='12m',path='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-v1p0/'):
     if isinstance(gal,Galaxy):
         name = gal.name.lower()
     elif isinstance(gal,str):
@@ -27,16 +27,13 @@ def mom0_get(gal,data_mode='12m'):
         raise ValueError("'gal' must be a str or galaxy!")
     if data_mode == '7m':
         data_mode = '7m'
-        conbeam=None
-        print( 'WARNING: SFR maps come in 12m sizes only.') #(!!!) What about for all the new 15" maps?
-        print( 'WARNING: Convolution forcibly disabled.')
     elif data_mode in ['12m','12m+7m']:
         data_mode = '12m+7m'  
 
     if name=='m33':
         filename = 'notphangsdata/m33.co21_iram.14B-088_HI.mom0.fits'
     else:
-        filename = 'phangsdata/'+name+'_co21_'+data_mode+'+tp_mom0.fits'
+        filename = path+name+'_co21_'+data_mode+'+tp_mom0.fits'
     
     if os.path.isfile(filename):
         if name=='m33':
@@ -48,7 +45,7 @@ def mom0_get(gal,data_mode='12m'):
         I_mom0 = None
     return I_mom0
 
-def mom1_get(gal,data_mode='12m'):
+def mom1_get(gal,data_mode='12m',path='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-v1p0/'):
     if isinstance(gal,Galaxy):
         name = gal.name.lower()
     elif isinstance(gal,str):
@@ -57,9 +54,6 @@ def mom1_get(gal,data_mode='12m'):
         raise ValueError("'gal' must be a str or galaxy!")
     if data_mode == '7m':
         data_mode = '7m'
-        conbeam=None
-        print( 'WARNING: SFR maps come in 12m sizes only.') #(!!!) What about for all the new 15" maps?
-        print( 'WARNING: Convolution forcibly disabled.')
     elif data_mode in ['12m','12m+7m']:
         data_mode = '12m+7m'  
 
@@ -68,7 +62,7 @@ def mom1_get(gal,data_mode='12m'):
                 'notphangsdata/M33_14B-088_HI.clean.image.GBT_feathered.pbcov_gt_0.5_masked.peakvels.fits'\
                 # Technically not a moment1 map, but it works in this context.
     else:
-        filename = 'phangsdata/'+name+'_co21_'+data_mode+'+tp_mom1.fits' 
+        filename = path+name+'_co21_'+data_mode+'+tp_mom1.fits' 
         
     if os.path.isfile(filename):
         if name=='m33':
@@ -80,7 +74,7 @@ def mom1_get(gal,data_mode='12m'):
         I_mom1 = None
     return I_mom1
 
-def tpeak_get(gal,data_mode='12m'):
+def tpeak_get(gal,data_mode='12m',path='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-v1p0/'):
     if isinstance(gal,Galaxy):
         name = gal.name.lower()
     elif isinstance(gal,str):
@@ -89,16 +83,13 @@ def tpeak_get(gal,data_mode='12m'):
         raise ValueError("'gal' must be a str or galaxy!")
     if data_mode == '7m':
         data_mode = '7m'
-        conbeam=None
-        print( 'WARNING: SFR maps come in 12m sizes only.') #(!!!) What about for all the new 15" maps?
-        print( 'WARNING: Convolution forcibly disabled.')
     elif data_mode in ['12m','12m+7m']:
         data_mode = '12m+7m'  
 
     if name=='m33':
         filename = 'notphangsdata/m33.co21_iram.14B-088_HI.peaktemps.fits'
     else:
-        filename = 'phangsdata/'+name+'_co21_'+data_mode+'+tp_tpeak.fits'
+        filename = path+name+'_co21_'+data_mode+'+tp_tpeak.fits'
     
     if os.path.isfile(filename):
         if name=='m33':
@@ -110,7 +101,7 @@ def tpeak_get(gal,data_mode='12m'):
         I_tpeak = None
     return I_tpeak
 
-def hdr_get(gal,data_mode='12m'):
+def hdr_get(gal,data_mode='12m',path='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-v1p0/'):
     if isinstance(gal,Galaxy):
         name = gal.name.lower()
     elif isinstance(gal,str):
@@ -119,9 +110,6 @@ def hdr_get(gal,data_mode='12m'):
         raise ValueError("'gal' must be a str or galaxy!")
     if data_mode == '7m':
         data_mode = '7m'
-        conbeam=None
-        print( 'WARNING: SFR maps come in 12m sizes only.') #(!!!) What about for all the new 15" maps?
-        print( 'WARNING: Convolution forcibly disabled.')
     elif data_mode in ['12m','12m+7m']:
         data_mode = '12m+7m'  
     
@@ -135,9 +123,9 @@ def hdr_get(gal,data_mode='12m'):
                 hdr_found = True
     else:
         for filename in [\
-        'phangsdata/'+name+'_co21_'+data_mode+'+tp_mom0.fits',\
-        'phangsdata/'+name+'_co21_'+data_mode+'+tp_mom1.fits',\
-        'phangsdata/'+name+'_co21_'+data_mode+'+tp_tpeak.fits']:
+        path+name+'_co21_'+data_mode+'+tp_mom0.fits',\
+        path+name+'_co21_'+data_mode+'+tp_mom1.fits',\
+        path+name+'_co21_'+data_mode+'+tp_tpeak.fits']:
             if os.path.isfile(filename):
                 hdr = fits.getheader(filename)
                 hdr_found = True
@@ -146,7 +134,7 @@ def hdr_get(gal,data_mode='12m'):
         hdr = None
     return hdr
 
-def sfr_get(gal,hdr=None):
+def sfr_get(gal,hdr=None,path='/media/jnofech/BigData/PHANGS/Archive/galex_and_wise/'):
     if isinstance(gal,Galaxy):
         name = gal.name.lower()
     elif isinstance(gal,str):
@@ -157,7 +145,7 @@ def sfr_get(gal,hdr=None):
     if name=='m33':
         filename = fits.open('notphangsdata/cube.fits')[13]
     else:
-        filename = 'phangsdata/sfr/'+name+'_sfr_fuvw4.fits'
+        filename = path+name+'_sfr_fuvw4_gauss15.fits'
     if os.path.isfile(filename):
         sfr_map = Projection.from_hdu(fits.open(filename))
     else:
@@ -172,7 +160,7 @@ def sfr_get(gal,hdr=None):
         sfr = sfr_map
     return sfr
             
-def cube_get(gal,data_mode):
+def cube_get(gal,data_mode,path='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-v1p0/'):
     if isinstance(gal,Galaxy):
         name = gal.name.lower()
     elif isinstance(gal,str):
@@ -184,7 +172,7 @@ def cube_get(gal,data_mode):
     if name=='m33':
         filename = 'notphangsdata/'+name+'.co21_iram.fits'
     else:
-        filename = 'phangsdata/'+name+'_co21_'+data_mode+'+tp_flat_round_k.fits'
+        filename = path+name+'_co21_'+data_mode+'+tp_flat_round_k.fits'
     if os.path.isfile(filename):
         cube = SpectralCube.read(filename)
     else:
@@ -239,7 +227,7 @@ def info(gal,conbeam=None,data_mode='12m'):
         conbeam=None
         print( 'WARNING: SFR maps come in 12m sizes only.') #(!!!) What about for all the new 15" maps?
         print( 'WARNING: Convolution forcibly disabled.')
-    elif data_mode in ['12m','12m+7m']:
+    elif data_mode in ['12m','12m+7m']:                     #(???) Do separate 12m, 12m+7m data exist?
         data_mode = '12m+7m'  
     
     if name=='m33':
