@@ -18,7 +18,9 @@ import rotcurve_tools as rc
 import copy
 import os
 
-def mom0_get(gal,data_mode='12m',path='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-v1p0/'):
+def mom0_get(gal,data_mode='',\
+             path7m ='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-LP/working_data/osu/',\
+             path12m='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-v1p0/'):
     if isinstance(gal,Galaxy):
         name = gal.name.lower()
     elif isinstance(gal,str):
@@ -29,23 +31,37 @@ def mom0_get(gal,data_mode='12m',path='/media/jnofech/BigData/PHANGS/Archive/PHA
         data_mode = '7m'
     elif data_mode in ['12m','12m+7m']:
         data_mode = '12m+7m'  
+    elif data_mode=='':
+        print('No data_mode set. Defaulted to 12m+7m.')
+        data_mode = '12m+7m'
 
-    if name=='m33':
-        filename = 'notphangsdata/m33.co21_iram.14B-088_HI.mom0.fits'
-    else:
+    # Get the mom0 file. In K km/s.
+    I_mom0=None
+    if data_mode=='7m':
+        path = path7m
+        filename_7mtp = path+name+'_'+data_mode+'+tp_co21_mom0.fits'    # 7m+tp mom0. Ideal.
+        filename_7m   = path+name+'_'+data_mode+   '_co21_mom0.fits'    # 7m mom0. Less reliable.
+        if os.path.isfile(filename_7mtp):
+            I_mom0 = fits.getdata(filename_7mtp)
+        elif os.path.isfile(filename_7m):
+            print('No 7m+tp mom0 found. Using 7m mom0 instead.')
+            I_mom0 = fits.getdata(filename_7m)
+    elif data_mode=='12m+7m':
+        path = path12m
         filename = path+name+'_co21_'+data_mode+'+tp_mom0.fits'
-    
-    if os.path.isfile(filename):
-        if name=='m33':
-            I_mom0 = fits.getdata(filename) /1000.  # In K km/s now.
-        else:
-            I_mom0 = fits.getdata(filename)         # In K km/s.
+        if os.path.isfile(filename):
+            I_mom0 = fits.getdata(filename)
     else:
-        print( "WARNING: No mom0 map found!")
+        print('WARNING: Invalid data_mode-- No mom0 was found!')
         I_mom0 = None
+        return I_mom0
+    if I_mom0 is None:
+        print('WARNING: No mom0 was found!')
     return I_mom0
 
-def mom1_get(gal,data_mode='12m',path='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-v1p0/'):
+def mom1_get(gal,data_mode='',\
+             path7m ='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-LP/working_data/osu/',\
+             path12m='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-v1p0/'):
     if isinstance(gal,Galaxy):
         name = gal.name.lower()
     elif isinstance(gal,str):
@@ -56,25 +72,37 @@ def mom1_get(gal,data_mode='12m',path='/media/jnofech/BigData/PHANGS/Archive/PHA
         data_mode = '7m'
     elif data_mode in ['12m','12m+7m']:
         data_mode = '12m+7m'  
+    elif data_mode=='':
+        print('No data_mode set. Defaulted to 12m+7m.')
+        data_mode = '12m+7m' 
 
-    if name=='m33':
-        filename = \
-                'notphangsdata/M33_14B-088_HI.clean.image.GBT_feathered.pbcov_gt_0.5_masked.peakvels.fits'\
-                # Technically not a moment1 map, but it works in this context.
+    # Get the mom1 file. In K km/s.
+    I_mom1=None
+    if data_mode=='7m':
+        path = path7m
+        filename_7mtp = path+name+'_'+data_mode+'+tp_co21_mom1.fits'    # 7m+tp mom1. Ideal.
+        filename_7m   = path+name+'_'+data_mode+   '_co21_mom1.fits'    # 7m mom1. Less reliable.
+        if os.path.isfile(filename_7mtp):
+            I_mom1 = fits.getdata(filename_7mtp)
+        elif os.path.isfile(filename_7m):
+            print('No 7m+tp mom1 found. Using 7m mom1 instead.')
+            I_mom1 = fits.getdata(filename_7m)
+    elif data_mode=='12m+7m':
+        path = path12m
+        filename = path+name+'_co21_'+data_mode+'+tp_mom1.fits'
+        if os.path.isfile(filename):
+            I_mom1 = fits.getdata(filename)
     else:
-        filename = path+name+'_co21_'+data_mode+'+tp_mom1.fits' 
-        
-    if os.path.isfile(filename):
-        if name=='m33':
-            I_mom1 = fits.getdata(filename) /1000.  # In km/s now.
-        else:
-            I_mom1 = fits.getdata(filename)         # In km/s.
-    else:
-        print( "WARNING: No mom1 map found!")
+        print('WARNING: Invalid data_mode-- No mom1 was found!')
         I_mom1 = None
+        return I_mom1
+    if I_mom1 is None:
+        print('WARNING: No mom1 was found!')
     return I_mom1
 
-def tpeak_get(gal,data_mode='12m',path='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-v1p0/'):
+def tpeak_get(gal,data_mode='',\
+             path7m ='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-LP/working_data/osu/',\
+             path12m='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-v1p0/'):
     if isinstance(gal,Galaxy):
         name = gal.name.lower()
     elif isinstance(gal,str):
@@ -85,23 +113,37 @@ def tpeak_get(gal,data_mode='12m',path='/media/jnofech/BigData/PHANGS/Archive/PH
         data_mode = '7m'
     elif data_mode in ['12m','12m+7m']:
         data_mode = '12m+7m'  
+    elif data_mode=='':
+        print('No data_mode set. Defaulted to 12m+7m.')
+        data_mode = '12m+7m' 
 
-    if name=='m33':
-        filename = 'notphangsdata/m33.co21_iram.14B-088_HI.peaktemps.fits'
-    else:
+    # Get the tpeak file. In K km/s.
+    I_tpeak=None
+    if data_mode=='7m':
+        path = path7m
+        filename_7mtp = path+name+'_'+data_mode+'+tp_co21_tpeak.fits'    # 7m+tp tpeak. Ideal.
+        filename_7m   = path+name+'_'+data_mode+   '_co21_tpeak.fits'    # 7m tpeak. Less reliable.
+        if os.path.isfile(filename_7mtp):
+            I_tpeak = fits.getdata(filename_7mtp)
+        elif os.path.isfile(filename_7m):
+            print('No 7m+tp tpeak found. Using 7m tpeak instead.')
+            I_tpeak = fits.getdata(filename_7m)
+    elif data_mode=='12m+7m':
+        path = path12m
         filename = path+name+'_co21_'+data_mode+'+tp_tpeak.fits'
-    
-    if os.path.isfile(filename):
-        if name=='m33':
-            I_tpeak = fits.getdata(filename)         # In K.
-        else:
-            I_tpeak = fits.getdata(filename)         # In K.
+        if os.path.isfile(filename):
+            I_tpeak = fits.getdata(filename)
     else:
-        print( "WARNING: No tpeak map found!")
+        print('WARNING: Invalid data_mode-- No tpeak was found!')
         I_tpeak = None
+        return I_tpeak
+    if I_tpeak is None:
+        print('WARNING: No tpeak was found!')
     return I_tpeak
 
-def hdr_get(gal,data_mode='12m',path='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-v1p0/'):
+def hdr_get(gal,data_mode='',\
+             path7m ='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-LP/working_data/osu/',\
+             path12m='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-v1p0/'):
     if isinstance(gal,Galaxy):
         name = gal.name.lower()
     elif isinstance(gal,str):
@@ -112,16 +154,27 @@ def hdr_get(gal,data_mode='12m',path='/media/jnofech/BigData/PHANGS/Archive/PHAN
         data_mode = '7m'
     elif data_mode in ['12m','12m+7m']:
         data_mode = '12m+7m'  
+    elif data_mode=='':
+        print('No data_mode set. Defaulted to 12m+7m.')
+        data_mode = '12m+7m'
     
     hdr = None
     hdr_found = False
-    if name=='m33':
+    
+    if data_mode=='7m':
+        path = path7m
         for filename in [\
-        'notphangsdata/M33_14B-088_HI.clean.image.GBT_feathered.pbcov_gt_0.5_masked.peakvels.fits']:
+        path+name+'_'+data_mode+   '_co21_mom0.fits',\
+        path+name+'_'+data_mode+   '_co21_mom1.fits',\
+        path+name+'_'+data_mode+   '_co21_tpeak.fits',\
+        path+name+'_'+data_mode+'+tp_co21_mom0.fits',\
+        path+name+'_'+data_mode+'+tp_co21_mom1.fits',\
+        path+name+'_'+data_mode+'+tp_co21_tpeak.fits']:
             if os.path.isfile(filename):
                 hdr = fits.getheader(filename)
                 hdr_found = True
-    else:
+    if data_mode=='12m+7m':
+        path = path12m
         for filename in [\
         path+name+'_co21_'+data_mode+'+tp_mom0.fits',\
         path+name+'_co21_'+data_mode+'+tp_mom1.fits',\
@@ -134,18 +187,16 @@ def hdr_get(gal,data_mode='12m',path='/media/jnofech/BigData/PHANGS/Archive/PHAN
         hdr = None
     return hdr
 
-def sfr_get(gal,hdr=None,path='/media/jnofech/BigData/PHANGS/Archive/galex_and_wise/'):
+def sfr_get(gal,hdr=None,conbeam=None,path='/media/jnofech/BigData/PHANGS/Archive/galex_and_wise/'):
     if isinstance(gal,Galaxy):
         name = gal.name.lower()
     elif isinstance(gal,str):
         name = gal.lower()
     else:
         raise ValueError("'gal' must be a str or galaxy!")
-
-    if name=='m33':
-        filename = fits.open('notphangsdata/cube.fits')[13]
-    else:
-        filename = path+name+'_sfr_fuvw4_gauss15.fits'
+    # Be sure to change 'gauss15' to 'gauss7p5' when better data becomes available!
+#     filename = path+name+'_sfr_fuvw4_gauss15.fits'        # Galex FUV band + WISE Band 4 (old version)
+    filename = path+name+'_sfr_nuvw3_gauss15.fits'        # Galex NUV band + WISE Band 3
     if os.path.isfile(filename):
         sfr_map = Projection.from_hdu(fits.open(filename))
     else:
@@ -158,29 +209,49 @@ def sfr_get(gal,hdr=None,path='/media/jnofech/BigData/PHANGS/Archive/galex_and_w
                                      # https://www.aanda.org/articles/aa/pdf/2015/06/aa23518-14.pdf
     else:
         sfr = sfr_map
+
+    if conbeam!=None:
+        sfr = convolve_2D(gal,hdr,sfr,conbeam)  # Convolved SFR map.
     return sfr
             
-def cube_get(gal,data_mode,path='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-v1p0/'):
+def cube_get(gal,data_mode,\
+             path7m ='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-LP/working_data/osu/',\
+             path12m='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-v1p0/'):
     if isinstance(gal,Galaxy):
         name = gal.name.lower()
     elif isinstance(gal,str):
         name = gal.lower()
     else:
         raise ValueError("'gal' must be a str or galaxy!")
+    if data_mode == '7m':
+        data_mode = '7m'
+    elif data_mode in ['12m','12m+7m']:
+        data_mode = '12m+7m'
 
     # Spectral Cube
-    if name=='m33':
-        filename = 'notphangsdata/'+name+'.co21_iram.fits'
-    else:
+    cube=None
+    if data_mode=='7m':
+        path = path7m
+        filename_7mtp = path+name+'_'+data_mode+'+tp_co21_pbcorr_round_k.fits'    # 7m+tp cube. Ideal.
+        filename_7m   = path+name+'_'+data_mode+   '_co21_pbcorr_round_k.fits'    # 7m cube. Less reliable.
+        if os.path.isfile(filename_7mtp):
+            cube = SpectralCube.read(filename_7mtp)
+        elif os.path.isfile(filename_7m):
+            print('No 7m+tp cube found. Using 7m cube instead.')
+            cube = SpectralCube.read(filename_7m)
+    elif data_mode=='12m+7m':
+        path = path12m
         filename = path+name+'_co21_'+data_mode+'+tp_flat_round_k.fits'
-    if os.path.isfile(filename):
-        cube = SpectralCube.read(filename)
+        if os.path.isfile(filename):
+            cube = SpectralCube.read(filename)
     else:
-        print('WARNING: No cube was found!')
+        print('WARNING: Invalid data_mode-- No cube was found!')
         cube = None
+    if cube is None:
+        print('WARNING: No cube was found!')
     return cube
     
-def info(gal,conbeam=None,data_mode='12m'):
+def info(gal,conbeam=None,data_mode=''):
     '''
     Returns basic info from galaxies.
     Astropy units are NOT attached to outputs.
@@ -224,49 +295,40 @@ def info(gal,conbeam=None,data_mode='12m'):
         
     if data_mode == '7m':
         data_mode = '7m'
-        conbeam=None
-        print( 'WARNING: SFR maps come in 12m sizes only.') #(!!!) What about for all the new 15" maps?
-        print( 'WARNING: Convolution forcibly disabled.')
+#         conbeam=None
+#         print( 'WARNING: SFR maps come in 12m sizes only.') #(!!!) What about for all the new 15" maps?
+#         print( 'WARNING: Convolution forcibly disabled.')
     elif data_mode in ['12m','12m+7m']:                     #(???) Do separate 12m, 12m+7m data exist?
         data_mode = '12m+7m'  
-    
-    if name=='m33':
-        print( 'WARNING: Only 12m data available. Also, M33 isn\'t properly supported.')  
+    elif data_mode=='':
+        print('No data_mode set. Defaulted to 12m+7m.')
+        data_mode = '12m+7m'
     
     I_mom0 = mom0_get(gal,data_mode)
     I_mom1 = mom1_get(gal,data_mode)
     I_tpeak = tpeak_get(gal,data_mode)
     hdr = hdr_get(gal,data_mode)
-    
-    if name=='m33':
-        hdr_beam = fits.getheader('notphangsdata/m33.co21_iram.14B-088_HI.mom0.fits')
-            # WARNING: The IRAM .fits files give headers that galaxies.py misinterprets somehow,
-            #    causing the galaxy to appear weirdly warped and lopsided.
-            #    The peakvels.fits gives accurate data... but does not contain beam information,
-            #    so the IRAM one is used for that.
-        beam = hdr_beam['BMAJ']
-    else:
-        beam = hdr['BMAJ']                                                    # In degrees.
+    beam = hdr['BMAJ']                                                    # In degrees.
     
     # Fix the headers so WCS doesn't think that they're 3D!
-    if name!='m33':
-        # Should I find a more elegant way of telling which headers have 3D keywords?
-        hdrcopy = copy.deepcopy(hdr)
-        for kw in ['CTYPE3', 'CRVAL3', 'CDELT3', 'CRPIX3', 'CUNIT3']:
-            del hdrcopy[kw]
-        for i in ['1','2','3']:
-            for j in ['1', '2', '3']:
+    hdrcopy = copy.deepcopy(hdr)
+    for kw in ['CTYPE3', 'CRVAL3', 'CDELT3', 'CRPIX3', 'CUNIT3']:
+        del hdrcopy[kw]
+    for i in ['1','2','3']:
+        for j in ['1', '2', '3']:
+            if data_mode=='7m':
+                del hdrcopy['PC'+i+'_'+j]
+            else:
                 del hdrcopy['PC0'+i+'_0'+j]
-        hdr = hdrcopy
+    hdr = hdrcopy
     
-    sfr = sfr_get(gal,hdr)
-           
+    sfr = sfr_get(gal,hdr)                      # Not convolved yet, despite that being an option.
     cube = cube_get(gal,data_mode)
         
         
     # CONVOLUTION, if enabled:
     if conbeam!=None:
-        hdr,I_mom0, I_tpeak, cube = cube_moments(gal,conbeam)    # CONVOLVED moments, with their cube.
+        hdr,I_mom0, I_tpeak, cube = cube_convolved(gal,conbeam,data_mode) # CONVOLVED moments, with their cube.
 #         sfr = sfr.reproject(hdr)                                  # It was reprojected already.
         sfr = convolve_2D(gal,hdr,sfr,conbeam)  # Convolved SFR map.
     else:
@@ -419,7 +481,7 @@ def sigmas(gal,hdr=None,beam=None,I_mom0=None,I_tpeak=None,alpha=6.7,mode='',sig
                         7m data.
         This determines the min and max
         values of the output 'rad' array.
-    mode='' : str
+    sigmode='' : str
         'sigma' - returns linewidth.
         'Sigma' - returns H2 surface density.
 
@@ -483,7 +545,9 @@ def sigmas(gal,hdr=None,beam=None,I_mom0=None,I_tpeak=None,alpha=6.7,mode='',sig
     else:
         print( "SELECT A MODE.")
 
-def cube_moments(gal,conbeam):
+def cube_convolved(gal,conbeam,data_mode='',\
+                  path7m ='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-LP/working_data/osu/',\
+                  path12m='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-v1p0/'):
     '''
     Extracts the mom0 and tpeak maps from
         a convolved data cube.
@@ -499,6 +563,9 @@ def cube_moments(gal,conbeam):
     conbeam : float
         Convolution beam width, in pc 
         OR arcsec. Must specify units!
+    data_mode='12m' or '7m' : str
+        Chooses either 12m data or 7m
+        data.
         
     Returns:
     --------
@@ -521,7 +588,6 @@ def cube_moments(gal,conbeam):
     else:
         raise ValueError("'gal' must be a str or galaxy!")
 
-
     resolutions = np.array([60,80,100,120,500,750,1000])*u.pc   # Available pre-convolved resolutions,
                                                                 #    in PHANGS-ALMA-v1p0
     # Units for convolution beamwidth:
@@ -534,38 +600,48 @@ def cube_moments(gal,conbeam):
         conbeam_filename = str(conbeam.to(u.arcsec).value)+'arcsec'
     else:
         raise ValueError("'conbeam' must have units of pc or arcsec.")
-    
+
     # Read cube
-    if conbeam not in resolutions:
-        if name.lower()=='m33':
-            filename = 'notphangsdata/cube_convolved/'+name.lower()+'.co21_iram_'+conbeam_filename+'.fits'
-        else:
-            filename = 'phangsdata/cube_convolved/'+name.lower()+'_co21_12m+7m+tp_flat_round_k_'+conbeam_filename+'.fits'
+    if data_mode=='7m':
+        path = path7m
+        filename = path+'cube_convolved/'+name.lower()+'_7m_co21_pbcorr_round_k_'\
+                                                       +conbeam_filename+'.fits'
+        # May be '7m' or '7m+tp', but we'll just name them all as '7m' for simplicity.
         if os.path.isfile(filename):
             cubec = SpectralCube.read(filename)
             cubec.allow_huge_operations=True
         else:
             raise ValueError(filename+' does not exist.')
-        if name.lower()=='m33':
-            # M33's cube is bugged to drop the K unit.
-            I_mom0c = cubec.moment0().to(u.km/u.s) * u.K
-            I_tpeakc = cubec.max(axis=0) * u.K
-        else:
+        I_mom0c = cubec.moment0().to(u.K*u.km/u.s)
+        I_tpeakc = cubec.max(axis=0).to(u.K)
+        hdrc = I_mom0c.header
+    elif data_mode in ['12m','12m+7m']:
+        path = path12m
+        if conbeam not in resolutions:
+            filename = path+'cube_convolved/'+name.lower()+'_co21_12m+7m+tp_flat_round_k_'\
+                                                           +conbeam_filename+'.fits'
+            if os.path.isfile(filename):
+                cubec = SpectralCube.read(filename)
+                cubec.allow_huge_operations=True
+            else:
+                raise ValueError(filename+' does not exist.')
             I_mom0c = cubec.moment0().to(u.K*u.km/u.s)
             I_tpeakc = cubec.max(axis=0).to(u.K)
-        hdrc = I_mom0c.header
-    else:    # If pre-convolved 3D data (mom0, tpeak, cube) exist:
-        I_mom0c  = fits.getdata('phangsdata/'+name.lower()+'_co21_12m+7m+tp_mom0_'+conbeam_filename+'.fits')*u.K*u.km/u.s
-        I_tpeakc = fits.getdata('phangsdata/'+name.lower()+'_co21_12m+7m+tp_tpeak_'+conbeam_filename+'.fits')*u.K
-        filename = 'phangsdata/'+name.lower()+'_co21_12m+7m+tp_flat_round_k_'+conbeam_filename+'.fits'
-        if os.path.isfile(filename):
-            cubec = SpectralCube.read(filename)
-            cubec.allow_huge_operations=True
-        else:
-            raise ValueError(filename+' does not exist.')
-        print( "IMPORTANT NOTE: This uses pre-convolved .fits files from Drive.")
-        I_mom0c_DUMMY = cubec.moment0().to(u.K*u.km/u.s)
-        hdrc = I_mom0c_DUMMY.header
+            hdrc = I_mom0c.header
+        else:    # If pre-convolved 3D data (mom0, tpeak, cube) exist:
+            I_mom0c  = fits.getdata('phangsdata/'+name.lower()+'_co21_12m+7m+tp_mom0_'+conbeam_filename+'.fits')*u.K*u.km/u.s
+            I_tpeakc = fits.getdata('phangsdata/'+name.lower()+'_co21_12m+7m+tp_tpeak_'+conbeam_filename+'.fits')*u.K
+            filename = 'phangsdata/'+name.lower()+'_co21_12m+7m+tp_flat_round_k_'+conbeam_filename+'.fits'
+            if os.path.isfile(filename):
+                cubec = SpectralCube.read(filename)
+                cubec.allow_huge_operations=True
+            else:
+                raise ValueError(filename+' does not exist.')
+            print( "IMPORTANT NOTE: This uses pre-convolved .fits files from Drive.")
+            I_mom0c_DUMMY = cubec.moment0().to(u.K*u.km/u.s)
+            hdrc = I_mom0c_DUMMY.header
+    else:
+        print('ERROR: No data_mode selected in galaxytools.convolve_cube()!')
         
     return hdrc,I_mom0c.value, I_tpeakc.value, cubec
 
@@ -580,7 +656,9 @@ def convolve_2D(gal,hdr,map2d,conbeam):
         Name of galaxy, OR Galaxy
         object.
     hdr : fits.header.Header
-        Header for the galaxy.
+        Header for the galaxy. Does
+        NOT need to be convolved!
+        Only needed for pixel sizes.
     map2d : np.ndarray
         The map (e.g. SFR) that needs to 
         be convolved.
@@ -625,7 +703,9 @@ def convolve_2D(gal,hdr,map2d,conbeam):
     map2d_convolved = convolve_fft(map2d,gauss,normalize_kernel=True)
     return map2d_convolved
 
-def convolve_cube(gal,cube,conbeam):
+def convolve_cube(gal,cube,conbeam,data_mode='',\
+                  path7m ='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-LP/working_data/osu/',\
+                  path12m='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-v1p0/'):
     '''
     Convolves a cube over a given beam, and
     then generates and returns the moment
@@ -633,13 +713,17 @@ def convolve_cube(gal,cube,conbeam):
     
     Parameters:
     -----------
-    gal : galaxies.galaxies.Galaxy
-        "Galaxy" object for the galaxy.
+    gal : str OR Galaxy
+        Name of galaxy, OR Galaxy
+        object.
     cube : SpectralCube
         Spectral cube for the galaxy.
     conbeam : float
         Beam width, in pc OR arcsec.
         Must specify units!
+    data_mode='12m' or '7m' : str
+        Chooses where to save the output
+        file, based on the selected data.
             
     Returns:
     --------
@@ -648,6 +732,14 @@ def convolve_cube(gal,cube,conbeam):
         convolved to the resolution indicated
         by "conbeam".
     '''
+    if isinstance(gal,Galaxy):
+        name = gal.name.lower()
+    elif isinstance(gal,str):
+        name = gal.lower()
+        gal = Galaxy(name.upper())
+    else:
+        raise ValueError("'gal' must be a str or galaxy!")
+        
     if conbeam.unit in {u.pc, u.kpc, u.Mpc}:
         conbeam_width = conbeam.to(u.pc)                     # Beam width in pc.
         conbeam_angle = conbeam / gal.distance.to(u.pc) * u.rad
@@ -660,20 +752,25 @@ def convolve_cube(gal,cube,conbeam):
         raise ValueError("'beam' must have units of pc or arcsec.")
     
     bm = Beam(major=conbeam_angle,minor=conbeam_angle)    # Actual "beam" object, used for convolving cubes
-    print( bm)
+    print(bm)
     
     # Convolve the cube!
     cube = cube.convolve_to(bm)
     
     # Never convolve the cube again!
-    if gal.name=='M33':
-        filename = 'notphangsdata/cube_convolved/'+name.lower()+'.co21_iram_'+conbeam_filename+'.fits'
-    else:
-        filename = 'phangsdata/cube_convolved/'+name.lower()+'_co21_12m+7m+tp_flat_round_k_'+conbeam_filename+'.fits'
-    print( filename)
+    if data_mode=='7m':
+        path = path7m
+        filename = path+'cube_convolved/'+name.lower()+'_7m_co21_pbcorr_round_k_'\
+                                                       +conbeam_filename+'.fits'
+        # May be '7m' or '7m+tp', but we'll just name them all as '7m' for simplicity.
+    elif data_mode in ['12m','12m+7m']:
+        path = path12m
+        filename = path+'cube_convolved/'+name.lower()+'_co21_12m+7m+tp_flat_round_k_'\
+                                                       +conbeam_filename+'.fits'
+    print('Saving convolved cube to... '+filename)
     if os.path.isfile(filename):
         os.remove(filename)
-        print( filename+" has been overwritten.")
+        print(filename+" has been overwritten.")
     cube.write(filename)
     
     return cube
