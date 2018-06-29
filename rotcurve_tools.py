@@ -69,20 +69,19 @@ def rotcurve(gal,mode='',
         print('WARNING: Invalid \'mode\' selected for rotcurve_tools.rotcurve()!\n        Will use PHANGS rotcurve.')
         mode='PHANGS'
     if mode.lower()=='phangs':
-        if gal.name.lower()=='m33':
-            m33 = pd.read_csv('notphangsdata/m33_rad.out_fixed.csv')
-            R = m33['r']
-            vrot = m33['Vt']
-            vrot_e = None
-            print( "WARNING: M33 rotcurve error bars not accounted for!")
-        else:
-            fname = rcdir+name.lower()+"_co21_12m+7m+tp_RC.txt"
-            R, vrot, vrot_e = np.loadtxt(fname,skiprows=True,unpack=True)
+        fname = rcdir+name.lower()+"_co21_12m+7m+tp_RC.txt"
+        R, vrot, vrot_e = np.loadtxt(fname,skiprows=True,unpack=True)
     elif mode.lower()=='diskfit12m':
         fname = rcdir+'diskfit12m/'+name.lower()+"_co21_12m+7m_RC.txt"    # Not on server.
+        if not os.path.isfile(fname):
+            fname = rcdir+'diskfit7m/'+name.lower()+"_co21_12m+7m_RC_procedural.txt"# Not on server.Procedural.
+#             print('NOTE: Custom rotcurve not found-- using procedurally-generated rotcurve instead!')
         R, vrot, vrot_e = np.loadtxt(fname,skiprows=True,unpack=True)
     elif mode.lower()=='diskfit7m':
         fname = rcdir+'diskfit7m/'+name.lower()+"_co21_7m_RC.txt"         # Not on server.
+        if not os.path.isfile(fname):
+            fname = rcdir+'diskfit7m/'+name.lower()+"_co21_7m_RC_procedural.txt"  # Not on server. Procedural.
+#             print('NOTE: Custom rotcurve not found-- using procedurally-generated rotcurve instead!')
         R, vrot, vrot_e = np.loadtxt(fname,skiprows=True,unpack=True)
     else:
         raise ValueError("'mode' must be PHANGS, diskfit12m, or diskfit7m!")
@@ -104,7 +103,10 @@ def rotcurve(gal,mode='',
 #         R = np.roll(np.concatenate((R,[0]),0),1)
 #         vrot = np.roll(np.concatenate((vrot,[0]),0),1)
     
-    
+    # Check if rotcurve is valid
+    if np.isnan(np.sum(vrot)):
+        print('ERROR: Rotcurve failed to generate!')
+        return [np.nan]*4
     
     # BSpline interpolation of vrot(R)
     K=3                # Order of the BSpline
@@ -155,7 +157,16 @@ def rotcurve_smooth(R,vrot,R_e,vrot_e=None,smooth='spline',knots=8):
         SMOOTHED function for the interpolated
         rotation curve, in km/s.
     '''
+    # Check if rotcurve is valid
+    if np.isnan(np.sum(R)):
+        return [np.nan]*2
     
+    # Check if any error values are exactly zero
+    if vrot_e[vrot_e==0].size>0:
+        print('WARNING (rotcurve_tools.rotcurve_smooth) : \
+        vrot_e has at least one value that is exactly zero. Will change to 1e-9.')
+        vrot_e[vrot_e==0] = 1e-9
+
     # SMOOTHING:
     if smooth==None or smooth.lower()=='none':
         print( "WARNING: Smoothing disabled!")
@@ -182,7 +193,7 @@ def rotcurve_smooth(R,vrot,R_e,vrot_e=None,smooth='spline',knots=8):
         # BSpline interpolation of vrot_b(R)
         K=3                # Order of the BSpline
         t,c,k = interpolate.splrep(R,vrot_b,s=0,k=K)
-        vrot = interpolate.BSpline(t,c,k, extrapolate=False)  # Now it's a function.
+        vrot = interpolate.BSpline(t,c,k, extrapolate=True)  # Now it's a function.
     elif smooth.lower()=='universal':
         def vcirc_universal(r, *pars):
             '''
@@ -202,7 +213,7 @@ def rotcurve_smooth(R,vrot,R_e,vrot_e=None,smooth='spline',knots=8):
         # BSpline interpolation of vrot_u(R)
         K=3                # Order of the BSpline
         t,c,k = interpolate.splrep(R,vrot_u,s=0,k=K)
-        vrot = interpolate.BSpline(t,c,k, extrapolate=False)  # Now it's a function.
+        vrot = interpolate.BSpline(t,c,k, extrapolate=True)  # Now it's a function.
     elif smooth.lower() in ['simple','exponential','expo']:
         def vcirc_simple(r, *pars):
             '''
@@ -220,7 +231,7 @@ def rotcurve_smooth(R,vrot,R_e,vrot_e=None,smooth='spline',knots=8):
         # BSpline interpolation of vrot_u(R)
         K=3                # Order of the BSpline
         t,c,k = interpolate.splrep(R,vrot_s,s=0,k=K)
-        vrot = interpolate.BSpline(t,c,k, extrapolate=False)  # Now it's a function.
+        vrot = interpolate.BSpline(t,c,k, extrapolate=True)  # Now it's a function.
     else:
         raise ValueError('Invalid smoothing mode.')
     

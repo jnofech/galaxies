@@ -10,6 +10,7 @@ from astropy.utils.data import get_pkg_data_filename
 
 import pandas as pd
 from scipy import interpolate,optimize  # Added since scipy functions are used.
+import os                               # For checking whether to use a good rotcurve or a procedurally-generated one.
 
 def parse_galtable(galobj,name):
     table_name = get_pkg_data_filename('data/gal_base.fits',
@@ -327,21 +328,22 @@ class Galaxy(object):
             print('WARNING: Invalid \'mode\' selected for Galaxy.rotcurve()!\n        Will use PHANGS rotcurve.')
             mode='PHANGS'
         if mode.lower()=='phangs':
-            if self.name.lower()=='m33':
-                m33 = pd.read_csv('notphangsdata/m33_rad.out_fixed.csv')
-                R = m33['r']
-                vrot = m33['Vt']
-                vrot_e = None
-                print( "WARNING: M33 rotcurve error bars not accounted for!")
-            else:
-                fname = rcdir+self.name.lower()+"_co21_12m+7m+tp_RC.txt"
-                R, vrot, vrot_e = np.loadtxt(fname,skiprows=True,unpack=True)
+            fname = rcdir+self.name.lower()+"_co21_12m+7m+tp_RC.txt"
+            R, vrot, vrot_e = np.loadtxt(fname,skiprows=True,unpack=True)
         elif mode.lower()=='diskfit12m':
             fname = rcdir+'diskfit12m/'+self.name.lower()+"_co21_12m+7m_RC.txt"    # Not on server.
+            if not os.path.isfile(fname):
+                fname = rcdir+'diskfit7m/'+self.name.lower()+"_co21_12m+7m_RC_procedural.txt"# Not on server.Procedural.
+#                print('NOTE: Custom rotcurve not found-- using procedurally-generated rotcurve instead!')
             R, vrot, vrot_e = np.loadtxt(fname,skiprows=True,unpack=True)
         elif mode.lower()=='diskfit7m':
             fname = rcdir+'diskfit7m/'+self.name.lower()+"_co21_7m_RC.txt"         # Not on server.
+            if not os.path.isfile(fname):
+                fname = rcdir+'diskfit7m/'+self.name.lower()+"_co21_7m_RC_procedural.txt"  # Not on server. Procedural.
+#                print('NOTE: Custom rotcurve not found-- using procedurally-generated rotcurve instead!')
             R, vrot, vrot_e = np.loadtxt(fname,skiprows=True,unpack=True)
+        else:
+            raise ValueError("'mode' must be PHANGS, diskfit12m, or diskfit7m!")
 
             
             # R = Radius from center of galaxy, in arcsec.
@@ -361,6 +363,11 @@ class Galaxy(object):
 #            R = np.roll(np.concatenate((R,[0]),0),1)
 #            vrot = np.roll(np.concatenate((vrot,[0]),0),1)
 
+        # Check if rotcurve is valid
+        if np.isnan(np.sum(vrot)):
+            print('ERROR: Rotcurve failed to generate!')
+            return [np.nan]*4
+        
         # BSpline of vrot(R)
         K=3                # Order of the BSpline
         t,c,k = interpolate.splrep(R,vrot,s=0,k=K)

@@ -39,18 +39,18 @@ def mom0_get(gal,data_mode='',\
     I_mom0=None
     if data_mode=='7m':
         path = path7m
-        filename_7mtp = path+name+'_'+data_mode+'+tp_co21_mom0.fits'    # 7m+tp mom0. Ideal.
-        filename_7m   = path+name+'_'+data_mode+   '_co21_mom0.fits'    # 7m mom0. Less reliable.
-        if os.path.isfile(filename_7mtp):
-            I_mom0 = fits.getdata(filename_7mtp)
-        elif os.path.isfile(filename_7m):
+        filename_7mtp = name+'_'+data_mode+'+tp_co21_mom0.fits'    # 7m+tp mom0. Ideal.
+        filename_7m   = name+'_'+data_mode+   '_co21_mom0.fits'    # 7m mom0. Less reliable.
+        if os.path.isfile(path+filename_7mtp):
+            I_mom0 = fits.getdata(path+filename_7mtp)
+        elif os.path.isfile(path+filename_7m):
             print('No 7m+tp mom0 found. Using 7m mom0 instead.')
-            I_mom0 = fits.getdata(filename_7m)
+            I_mom0 = fits.getdata(path+filename_7m)
     elif data_mode=='12m+7m':
         path = path12m
-        filename = path+name+'_co21_'+data_mode+'+tp_mom0.fits'
-        if os.path.isfile(filename):
-            I_mom0 = fits.getdata(filename)
+        filename = name+'_co21_'+data_mode+'+tp_mom0.fits'
+        if os.path.isfile(path+filename):
+            I_mom0 = fits.getdata(path+filename)
     else:
         print('WARNING: Invalid data_mode-- No mom0 was found!')
         I_mom0 = None
@@ -80,18 +80,18 @@ def mom1_get(gal,data_mode='',\
     I_mom1=None
     if data_mode=='7m':
         path = path7m
-        filename_7mtp = path+name+'_'+data_mode+'+tp_co21_mom1.fits'    # 7m+tp mom1. Ideal.
-        filename_7m   = path+name+'_'+data_mode+   '_co21_mom1.fits'    # 7m mom1. Less reliable.
-        if os.path.isfile(filename_7mtp):
-            I_mom1 = fits.getdata(filename_7mtp)
-        elif os.path.isfile(filename_7m):
+        filename_7mtp = name+'_'+data_mode+'+tp_co21_mom1.fits'    # 7m+tp mom1. Ideal.
+        filename_7m   = name+'_'+data_mode+   '_co21_mom1.fits'    # 7m mom1. Less reliable.
+        if os.path.isfile(path+filename_7mtp):
+            I_mom1 = fits.getdata(path+filename_7mtp)
+        elif os.path.isfile(path+filename_7m):
             print('No 7m+tp mom1 found. Using 7m mom1 instead.')
-            I_mom1 = fits.getdata(filename_7m)
+            I_mom1 = fits.getdata(path+filename_7m)
     elif data_mode=='12m+7m':
         path = path12m
-        filename = path+name+'_co21_'+data_mode+'+tp_mom1.fits'
-        if os.path.isfile(filename):
-            I_mom1 = fits.getdata(filename)
+        filename = name+'_co21_'+data_mode+'+tp_mom1.fits'
+        if os.path.isfile(path+filename):
+            I_mom1 = fits.getdata(path+filename)
     else:
         print('WARNING: Invalid data_mode-- No mom1 was found!')
         I_mom1 = None
@@ -121,18 +121,18 @@ def tpeak_get(gal,data_mode='',\
     I_tpeak=None
     if data_mode=='7m':
         path = path7m
-        filename_7mtp = path+name+'_'+data_mode+'+tp_co21_tpeak.fits'    # 7m+tp tpeak. Ideal.
-        filename_7m   = path+name+'_'+data_mode+   '_co21_tpeak.fits'    # 7m tpeak. Less reliable.
-        if os.path.isfile(filename_7mtp):
-            I_tpeak = fits.getdata(filename_7mtp)
-        elif os.path.isfile(filename_7m):
+        filename_7mtp = name+'_'+data_mode+'+tp_co21_tpeak.fits'    # 7m+tp tpeak. Ideal.
+        filename_7m   = name+'_'+data_mode+   '_co21_tpeak.fits'    # 7m tpeak. Less reliable.
+        if os.path.isfile(path+filename_7mtp):
+            I_tpeak = fits.getdata(path+filename_7mtp)
+        elif os.path.isfile(path+filename_7m):
             print('No 7m+tp tpeak found. Using 7m tpeak instead.')
-            I_tpeak = fits.getdata(filename_7m)
+            I_tpeak = fits.getdata(path+filename_7m)
     elif data_mode=='12m+7m':
         path = path12m
-        filename = path+name+'_co21_'+data_mode+'+tp_tpeak.fits'
-        if os.path.isfile(filename):
-            I_tpeak = fits.getdata(filename)
+        filename = name+'_co21_'+data_mode+'+tp_tpeak.fits'
+        if os.path.isfile(path+filename):
+            I_tpeak = fits.getdata(path+filename)
     else:
         print('WARNING: Invalid data_mode-- No tpeak was found!')
         I_tpeak = None
@@ -164,23 +164,23 @@ def hdr_get(gal,data_mode='',\
     if data_mode=='7m':
         path = path7m
         for filename in [\
-        path+name+'_'+data_mode+   '_co21_mom0.fits',\
-        path+name+'_'+data_mode+   '_co21_mom1.fits',\
-        path+name+'_'+data_mode+   '_co21_tpeak.fits',\
-        path+name+'_'+data_mode+'+tp_co21_mom0.fits',\
-        path+name+'_'+data_mode+'+tp_co21_mom1.fits',\
-        path+name+'_'+data_mode+'+tp_co21_tpeak.fits']:
-            if os.path.isfile(filename):
-                hdr = fits.getheader(filename)
+        name+'_'+data_mode+   '_co21_mom0.fits',\
+        name+'_'+data_mode+   '_co21_mom1.fits',\
+        name+'_'+data_mode+   '_co21_tpeak.fits',\
+        name+'_'+data_mode+'+tp_co21_mom0.fits',\
+        name+'_'+data_mode+'+tp_co21_mom1.fits',\
+        name+'_'+data_mode+'+tp_co21_tpeak.fits']:
+            if os.path.isfile(path+filename):
+                hdr = fits.getheader(path+filename)
                 hdr_found = True
     if data_mode=='12m+7m':
         path = path12m
         for filename in [\
-        path+name+'_co21_'+data_mode+'+tp_mom0.fits',\
-        path+name+'_co21_'+data_mode+'+tp_mom1.fits',\
-        path+name+'_co21_'+data_mode+'+tp_tpeak.fits']:
-            if os.path.isfile(filename):
-                hdr = fits.getheader(filename)
+        name+'_co21_'+data_mode+'+tp_mom0.fits',\
+        name+'_co21_'+data_mode+'+tp_mom1.fits',\
+        name+'_co21_'+data_mode+'+tp_tpeak.fits']:
+            if os.path.isfile(path+filename):
+                hdr = fits.getheader(path+filename)
                 hdr_found = True
     if hdr_found == False:
         print('WARNING: No header was found!')
@@ -232,18 +232,18 @@ def cube_get(gal,data_mode,\
     cube=None
     if data_mode=='7m':
         path = path7m
-        filename_7mtp = path+name+'_'+data_mode+'+tp_co21_pbcorr_round_k.fits'    # 7m+tp cube. Ideal.
-        filename_7m   = path+name+'_'+data_mode+   '_co21_pbcorr_round_k.fits'    # 7m cube. Less reliable.
-        if os.path.isfile(filename_7mtp):
-            cube = SpectralCube.read(filename_7mtp)
-        elif os.path.isfile(filename_7m):
+        filename_7mtp = name+'_'+data_mode+'+tp_co21_pbcorr_round_k.fits'    # 7m+tp cube. Ideal.
+        filename_7m   = name+'_'+data_mode+   '_co21_pbcorr_round_k.fits'    # 7m cube. Less reliable.
+        if os.path.isfile(path+filename_7mtp):
+            cube = SpectralCube.read(path+filename_7mtp)
+        elif os.path.isfile(path+filename_7m):
             print('No 7m+tp cube found. Using 7m cube instead.')
-            cube = SpectralCube.read(filename_7m)
+            cube = SpectralCube.read(path+filename_7m)
     elif data_mode=='12m+7m':
         path = path12m
-        filename = path+name+'_co21_'+data_mode+'+tp_flat_round_k.fits'
-        if os.path.isfile(filename):
-            cube = SpectralCube.read(filename)
+        filename = name+'_co21_'+data_mode+'+tp_flat_round_k.fits'
+        if os.path.isfile(path+filename):
+            cube = SpectralCube.read(path+filename)
     else:
         print('WARNING: Invalid data_mode-- No cube was found!')
         cube = None
@@ -329,9 +329,9 @@ def info(gal,conbeam=None,data_mode=''):
     # CONVOLUTION, if enabled:
     if conbeam!=None:
         hdr,I_mom0, I_tpeak, cube = cube_convolved(gal,conbeam,data_mode) # CONVOLVED moments, with their cube.
-#         sfr = sfr.reproject(hdr)                                  # It was reprojected already.
-        sfr = convolve_2D(gal,hdr,sfr,conbeam)  # Convolved SFR map.
-    else:
+        if sfr is not None:
+            sfr = convolve_2D(gal,hdr,sfr,conbeam)  # Convolved SFR map.
+    elif sfr is not None:
         sfr = sfr.value
 
     return hdr,beam,I_mom0,I_mom1,I_tpeak,cube,sfr
