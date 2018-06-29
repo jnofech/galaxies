@@ -187,7 +187,25 @@ def hdr_get(gal,data_mode='',\
         hdr = None
     return hdr
 
-def sfr_get(gal,hdr=None,conbeam=None,path='/media/jnofech/BigData/PHANGS/Archive/galex_and_wise/'):
+def sfr_get(gal,hdr=None,conbeam=None,res='7p5',autocorrect=True,\
+            path='/media/jnofech/BigData/PHANGS/Archive/galex_and_wise/'):
+    '''
+    Uses NUV band + WISE Band 3.
+    
+    The 'res' can be '7p5' or '15',
+        i.e. 7.5" SFR data or 15" data.
+    The 7.5" is better, but keep in mind
+        that some cubes have beam widths
+        too high to be convolved to such
+        a high resolution. For these cases,
+        stick with the 15" SFR maps.
+    autocorrect=True : bool
+        Toggles whether to revert to 15"
+        data if 7.5" is missing.
+        Recommended to DISABLE if you need
+        cubes to be convolved to same res.
+        as SFR maps.
+    '''
     if isinstance(gal,Galaxy):
         name = gal.name.lower()
     elif isinstance(gal,str):
@@ -196,19 +214,31 @@ def sfr_get(gal,hdr=None,conbeam=None,path='/media/jnofech/BigData/PHANGS/Archiv
         raise ValueError("'gal' must be a str or galaxy!")
     # Be sure to change 'gauss15' to 'gauss7p5' when better data becomes available!
 #     filename = path+name+'_sfr_fuvw4_gauss15.fits'        # Galex FUV band + WISE Band 4 (old version)
-    filename = path+name+'_sfr_nuvw3_gauss15.fits'        # Galex NUV band + WISE Band 3
-    if os.path.isfile(filename):
-        sfr_map = Projection.from_hdu(fits.open(filename))
+#     filename = path+name+'_sfr_nuvw3_gauss15.fits'        # Galex NUV band + WISE Band 3
+#     if os.path.isfile(filename):
+#         sfr_map = Projection.from_hdu(fits.open(filename))
+#     else:
+#         print('WARNING: No SFR map was found!')
+#         sfr_map = None
+#         return sfr_map
+#     if hdr!=None:
+#         sfr = sfr_map.reproject(hdr) # Msun/yr/kpc^2. See header.
+#                                      # https://www.aanda.org/articles/aa/pdf/2015/06/aa23518-14.pdf
+#     else:
+#         sfr = sfr_map
+
+    map1      = band_get(gal,hdr,'nuv',res,sfr_toggle=False)    # Galex NUV band.
+    map2      = band_get(gal,hdr,'w3',res,sfr_toggle=False)     # WISE3 band.
+    if map1 is not None and map2 is not None:
+        sfr     = (map1*1.04e-1+map2*3.77e-3).value   # Sum of SFR contributions, in Msun/yr/kpc**2.
+    elif res=='7p5' and autocorrect==True:
+        print('(galaxytools.sfr_get())  WARNING: Unable to get 7.5" SFR map! Reverting to 15" instead.')
+        sfr = sfr_get(gal,hdr,conbeam,'15',path)
+        return sfr
     else:
-        print('WARNING: No SFR map was found!')
-        sfr_map = None
-        return sfr_map
-    
-    if hdr!=None:
-        sfr = sfr_map.reproject(hdr) # Msun/yr/kpc^2. See header.
-                                     # https://www.aanda.org/articles/aa/pdf/2015/06/aa23518-14.pdf
-    else:
-        sfr = sfr_map
+        print('(galaxytools.sfr_get())  WARNING: No '+str(res)+'" SFR map was found!')
+        sfr = None
+        return sfr
 
     if conbeam!=None:
         sfr = convolve_2D(gal,hdr,sfr,conbeam)  # Convolved SFR map.
@@ -250,6 +280,55 @@ def cube_get(gal,data_mode,\
     if cube is None:
         print('WARNING: No cube was found!')
     return cube
+
+def band_get(gal,hdr=None,band='',res='15',sfr_toggle=False,path='/media/jnofech/BigData/PHANGS/Archive/galex_and_wise/'):
+    '''
+    Returns the 'band' map, used to
+    generate SFR map.
+    
+    Parameters:
+    -----------
+    gal : Galaxy or str
+        Galaxy.
+    hdr : fits.header.Header
+        Header for the galaxy.
+    band : str
+        FUV = Galex NUV band (???-??? nm)
+        NUV = Galex NUV band (150-220 nm)
+        W3 = WISE Band 3 (12 µm data)
+        W4 = WISE Band 4 (22 µm data)
+    res='7p5' : str
+        Resolution, in arcsecs.
+        '7p5' - 7.5" resolution.
+        '15'  - 15" resolution.
+    sfr_toggle=False : bool
+        Toggles whether to find the
+        SFR contribution (Msun/yr/kpc^2)
+        directly. Disabled by default
+        since these files aren't always
+        included.
+    '''
+    if isinstance(gal,Galaxy):
+        name = gal.name.lower()
+    elif isinstance(gal,str):
+        name = gal.lower()
+    else:
+        raise ValueError("'gal' must be a str or galaxy!")
+
+    filename = path+name+'_'+(sfr_toggle*'sfr_')+band+'_gauss'+res+'.fits'
+    if os.path.isfile(filename):
+        map2d = Projection.from_hdu(fits.open(filename))        # Not necessarily in Msun/yr/kpc**2. Careful!
+#         print(filename)
+    else:
+        print('(galaxytools.band_get()) WARNING: No map was found, for '+(sfr_toggle*'sfr_')+band+'_gauss'+res+'.fits')
+        map2d = None
+        return map2d
+    
+    if hdr!=None:
+        map2d_final = map2d.reproject(hdr)
+    else:
+        map2d_final = map2d
+    return map2d_final
     
 def info(gal,conbeam=None,data_mode=''):
     '''
@@ -308,7 +387,10 @@ def info(gal,conbeam=None,data_mode=''):
     I_mom1 = mom1_get(gal,data_mode)
     I_tpeak = tpeak_get(gal,data_mode)
     hdr = hdr_get(gal,data_mode)
-    beam = hdr['BMAJ']                                                    # In degrees.
+    beam = hdr['BMAJ']                       # In degrees.
+    beam_arcsec = (beam*u.deg).to(u.arcsec)  # In arcsec. We want this to be LOWER than the SFR map's 7.5"
+                                             #    beamwidth (i.e. higher resolution), but this often fails
+                                             #    and we need to use 15" SFR maps instead.
     
     # Fix the headers so WCS doesn't think that they're 3D!
     hdrcopy = copy.deepcopy(hdr)
@@ -322,7 +404,23 @@ def info(gal,conbeam=None,data_mode=''):
                 del hdrcopy['PC0'+i+'_0'+j]
     hdr = hdrcopy
     
-    sfr = sfr_get(gal,hdr)                      # Not convolved yet, despite that being an option.
+    # Choose appropriate resolution for SFR map, changing 'conbeam' to match it if necessary.
+    res='7p5'
+    if beam_arcsec > 7.5*u.arcsec and conbeam is not None:
+        print('(galaxytools.info())     WARNING: Beam is '+str(beam_arcsec)+'", and we want to convolve.')
+        print('                                  This will use a 15" SFR map instead!')
+        res='15'
+    
+    # Get SFR at this resolution.
+    sfr = sfr_get(gal,hdr,res=res,autocorrect=False) # Not convolved yet, despite that being an option.
+    if res=='7p5' and sfr is None:     # If the 7.5" isn't found:
+        print('(galaxytools.info())              Will attempt a 15" SFR map instead!')
+        res='15'
+        sfr = sfr_get(gal,hdr,res=res)               # Try again with lower resolution.
+    if res=='15' and sfr is not None:  # If a 15" SFR map was successful:
+        if conbeam==7.5*u.arcsec:
+            print('(galaxytools.info())     NOTE:    The 15" SFR map was successful! Changing conbeam from 7.5" to 15".')
+            conbeam=15.*u.arcsec
     cube = cube_get(gal,data_mode)
         
         
