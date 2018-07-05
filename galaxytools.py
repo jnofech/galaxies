@@ -11,6 +11,8 @@ from spectral_cube import SpectralCube, Projection
 from radio_beam import Beam
 
 from scipy import interpolate
+from scipy.interpolate import BSpline, make_lsq_spline
+from scipy.stats import binned_statistic
 
 from galaxies.galaxies import Galaxy
 import rotcurve_tools as rc
@@ -434,111 +436,108 @@ def info(gal,conbeam=None,data_mode=''):
 
     return hdr,beam,I_mom0,I_mom1,I_tpeak,cube,sfr
     
-def beta_and_depletion(R,rad,Sigma,sfr,vrot_s):
+def depletion(Sigma=None,sfr=None):
     '''
-    Returns depletion time, in years,
-        and beta parameter (the index 
-        you would get if the rotation 
-        curve were a power function of 
-        radius, e.g. vrot ~ R**(beta).
+    Returns 2D map of depletion time, 
+        in years.
     
     Parameters:
     -----------
-    R : np.ndarray
-        1D array of galaxy radii, in pc.
-    rad : np.ndarray
-        2D map of galaxy radii, in pc.
     Sigma : np.ndarray
         Map for surface density.
     sfr : np.ndarray
         2D map of the SFR, in Msun/kpc^2/yr.
-    vrot_s : scipy.interpolate._bsplines.BSpline
-        Function for the interpolated rotation
-        curve, in km/s. Ideally smoothed.
         
     Returns:
     --------
-    beta : np.ndarray
-        2D map of beta parameter.
     depletion : np.ndarray
         2D map of depletion time, in yr.
-    '''
+    '''    
+    if Sigma is None or sfr is None:
+        raise ValueError('galaxytools.depletion:  SFR or Sigma not specified.')
     # Calculating depletion time
     # Sigma is in Msun / pc^2.
     # SFR is in Msun / kpc^2 / yr.
     depletion = Sigma/(u.pc.to(u.kpc))**2/sfr
-    
-    
-    # Calculating beta
-    dVdR = np.gradient(vrot_s(R),R)   # derivative of rotation curve;
-    # Interpolating a 2D Array
-    K=3                # Order of the BSpline
-    t,c,k = interpolate.splrep(R,dVdR,s=0,k=K)
-    dVdR = interpolate.BSpline(t,c,k, extrapolate=True)     # Cubic interpolation of dVdR
-    beta = rad.value/vrot_s(rad) * dVdR(rad)
-    depletion = Sigma/(u.pc.to(u.kpc))**2/sfr
-    
-    return beta, depletion
+    return depletion
 
-def beta_and_depletion_clean(beta,depletion,rad=None,stride=1):
+def rad_function2D(rad,radfunct,R=None):
     '''
-    Makes beta and depletion time more easily
+    Converts a function of radius R
+        into a 2D map corresponding
+        to radius map "rad".
+        
+    Parameters:
+    -----------
+    rad : np.ndarray
+        2D map of galaxy radii, in pc.
+    radfunct : BSpline OR np.ndarray
+        Function of radius that will
+        be converted to 2D.
+    R=None : np.ndarray
+        1D array of galaxy radii, in pc.
+        Only needed if radfunct is an
+        array.
+    '''
+    if isinstance(radfunct,np.ndarray):
+        print('galaxytools.rad_function2D:  Warning: Provided f(R) is an array. Will be converted to BSpline!')
+        if R is None:
+            raise ValueError('                             BUT: \'R\' must not be None, first of all.')
+        # Convert it to a BSpline!
+        K=3                # Order of the BSpline
+        t,c,k = interpolate.splrep(R,radfunct,s=0,k=K)
+        radfunct = interpolate.BSpline(t,c,k, extrapolate=True)     # Cubic interpolation of beta
+    
+    # Interpolating a 2D Array
+    radfunct = radfunct(rad)
+    return radfunct
+        
+def map2D_to_1D(rad,maps,stride=1):
+    '''
+    Make 2D maps (beta2D, depletion, etc)
         presentable, by removing NaN values,
         converting to 1D arrays, and skipping
         numerous points to avoid oversampling.
+        Also sorts in order of ascending radius.
+    NOTE: Take np.log10 of maps BEFORE cleaning!
     
     Parameters:
     -----------
-    beta : np.ndarray
-        2D map of beta parameter.
-    depletion : np.ndarray
-        2D map of depletion time, in yr.
     rad : np.ndarray
         2D map of galaxy radii, in pc.
-    stride : int
-        Numer of points to be skipped over.
+    maps : list
+        List of 2D maps that you want organized.
+    stride=1 : int
+        Numer of points to be stepped over,
+        per... step.
     
     Returns:
     --------
-    beta : np.ndarray
-        1D array of beta parameter, with nans
-        removed and points skipped.
-    depletion : np.ndarray
-        1D array of depletion time, with nans
-        removed and points skipped.
     rad1D : np.ndarray
-        1D array of radius, corresponding to
-        beta and depletion
+        1D array of radius, in ascending order
+    maps1D : list
+        List of 1D arrays, with values
+        corresponding to rad1D
     '''
     # Making them 1D!
-    beta = beta.reshape(beta.size)
-    depletion = depletion.reshape(beta.size)
-    if rad!=None:
-        rad1D = rad.reshape(beta.size)
+    rad1D = np.ravel(rad)
+    for i in range(0,len(maps)):
+        maps[i] = np.ravel(maps[i])
     
-    # Cleaning the Rad/Depletion/Beta arrays!
-    index = np.arange(beta.size)
-    index = index[ np.isfinite(beta*np.log10(depletion)) ]
-    beta = beta[index][::stride]
-    depletion = depletion[index][::stride]   # No more NaNs or infs!
-    if rad!=None:
-        rad1D = rad1D[index][::stride]
+    # Cleaning the maps!
+    index = np.arange(rad.size)
+    index = index[ np.isfinite(rad1D*np.sum(maps,axis=0))]
+    rad1D = rad1D[index][::stride]
+    for i in range(0,len(maps)):
+        maps[i] = maps[i][index][::stride]
     
-    # Ordering the Rad/Depletion/Beta arrays!
+    # Ordering the maps!
     import operator
-    if rad!=None:
-        L = sorted(zip(np.ravel(rad1D.value),np.ravel(beta),np.ravel(depletion)), key=operator.itemgetter(0))
-        rad1D,beta,depletion = np.array(list(zip(*L))[0])*u.pc, np.array(list(zip(*L))[1]),\
-                               np.array(list(zip(*L))[2])
-    else:
-        L = sorted(zip(np.ravel(beta),np.ravel(depletion)), key=operator.itemgetter(0))
-        beta,depletion = np.array(list(zip(*L))[0]), np.array(list(zip(*L))[1])
+    L = sorted(zip(rad1D.value,*maps), key=operator.itemgetter(0))
+    rad1D,maps = np.array(list(zip(*L))[0])*u.pc, np.array(list(zip(*L))[1:])
     
     # Returning everything!
-    if rad!=None:
-        return beta, depletion, rad1D
-    else:
-        return beta,depletion
+    return rad1D,maps
 
 def sigmas(gal,hdr=None,beam=None,I_mom0=None,I_tpeak=None,alpha=6.7,mode='',sigmode=''):
     '''
@@ -642,6 +641,18 @@ def sigmas(gal,hdr=None,beam=None,I_mom0=None,I_tpeak=None,alpha=6.7,mode='',sig
         return rad, Sigma
     else:
         print( "SELECT A MODE.")
+        
+def means(array1D,bins=15):
+    '''
+    Finds the mean values of
+    some 1D array, using bins
+    of equal number.
+    '''
+    means = [np.nan]*bins
+    index = np.arange(array1D.size)
+    means, index_edges, binnumber = binned_statistic(index,array1D,statistic='mean',bins=bins)
+    
+    return means
 
 def cube_convolved(gal,conbeam,data_mode='',\
                   path7m ='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-LP/working_data/osu/',\

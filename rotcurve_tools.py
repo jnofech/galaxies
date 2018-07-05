@@ -393,7 +393,7 @@ def bspline(X,Y,knots=8,k=3,lowclamp=False, highclamp=False):
     
     return spl
 
-def localshear(R,vrot):
+def oort(R,vrot,oort=''):
     '''
     Returns the local shear parameter (i.e. the
     Oort A constant) for a galaxy with a provided
@@ -408,6 +408,9 @@ def localshear(R,vrot):
         Function for the interpolated
         rotation curve, in km/s.
         Smoothing is recommended!
+    oort : str
+        'A' - Returns Oort A.
+        'B' - Returns Oort B.
                         
     Returns:
     --------
@@ -418,10 +421,51 @@ def localshear(R,vrot):
     # Oort A versus radius.
     Omega = vrot(R) / R     # Angular velocity.
     dOmegadR = np.gradient(Omega,R)
-    A = (-1./2. * R*dOmegadR )*(u.kpc.to(u.pc)) # From km/s/pc to km/s/kpc.
-    A = bspline(R[np.isfinite(A)],A[np.isfinite(A)],knots=999)
+    A_arr = (-1./2. * R*dOmegadR )*(u.kpc.to(u.pc)) # From km/s/pc to km/s/kpc.
+    B_arr = A_arr - Omega*(u.kpc.to(u.pc))          # From km/s/pc to km/s/kpc.
     
-    return A
+    A = bspline(R[np.isfinite(A_arr*B_arr)],A_arr[np.isfinite(A_arr*B_arr)],knots=999)
+    B = bspline(R[np.isfinite(A_arr*B_arr)],B_arr[np.isfinite(A_arr*B_arr)],knots=999)
+    
+    if oort=='':
+        print('rotcurve_tools.oort():  WARNING: No \'oort\' mode selected! Returning Oort A by default.')
+        oort='A'
+    if oort.lower()=='a':
+        return A
+    elif oort.lower()=='b':
+        return B
+    else:
+        raise ValueError('rotcurve_tools.oort():  Invalid \'oort\' mode!')
+
+def beta(R,vrot_s):
+    '''
+    Returns beta parameter (the index 
+        you would get if the rotation
+        curve were a power function of
+        radius, e.g. vrot ~ R**(beta)).
+    
+    Parameters:
+    -----------
+    R : np.ndarray
+        1D array of galaxy radii, in pc.
+    vrot_s : scipy.interpolate._bsplines.BSpline
+        Function for the interpolated rotation
+        curve, in km/s. Ideally smoothed.
+        
+    Returns:
+    --------
+    beta : scipy.interpolate._bsplines.BSpline
+        Beta parameter, as a function of 
+        radius R.
+    '''
+    # Calculating beta
+    dVdR = np.gradient(vrot_s(R),R)   # derivative of rotation curve;
+    beta = R/vrot_s(R)*dVdR
+    # Interpolating
+    K=3                # Order of the BSpline
+    t,c,k = interpolate.splrep(R,beta,s=0,k=K)
+    beta = interpolate.BSpline(t,c,k, extrapolate=True)     # Cubic interpolation of beta
+    return beta
 
 def linewidth_iso(gal,beam=None,smooth='spline',knots=8,mode='PHANGS'):
     '''
