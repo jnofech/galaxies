@@ -91,7 +91,7 @@ class Galaxy(object):
                     t = Ned.query_object(name)
                     if len(t) == 1:
                         self.canonical_name = t['Object Name'][0]
-                        self.velocity = t['Velocity'][0] * u.km / u.s
+                        self.vsys = t['Velocity'][0] * u.km / u.s
                         self.center_position = \
                             SkyCoord(t['RA(deg)'][0], t['DEC(deg)'][0],
                                      frame='fk5',
@@ -111,7 +111,7 @@ class Galaxy(object):
                     unit=(u.deg, u.deg), frame='fk5')
                 self.position_angle=Angle(172.0 * u.deg)
                 self.inclination = Angle(20 * u.deg)
-                self.velocity = 463.0 * u.km / u.s
+                self.vsys = 463.0 * u.km / u.s
                 self.provenance = 'Override'
             if name.upper() == 'M33':
                 self.name = 'M33'
@@ -121,14 +121,14 @@ class Galaxy(object):
                              frame='fk5')
                 self.position_angle = Angle(201.12 * u.deg)
                 self.inclination = Angle(55.08 * u.deg)
-                self.velocity = -179 * u.km / u.s
+                self.vsys = -179 * u.km / u.s
                 self.provenance = 'Override'
             elif name.upper() == 'M83':
                 self.name = 'M83'
                 self.distance = 4.8e6 * u.pc
                 self.position_angle = Angle(225 * u.deg)
                 self.inclination = Angle(24 * u.deg)
-                self.velocity = 514 * u.km / u.s
+                self.vsys = 514 * u.km / u.s
                 self.provenance = 'Override'
             elif name.upper() == 'NGC4303':
                 self.name = 'NGC4303'
@@ -136,7 +136,7 @@ class Galaxy(object):
                 #self.position_angle = Angle(0 * u.deg)
                 self.position_angle = Angle(313.2 * u.deg)  # PHANGS best fit parameters
                 self.inclination = Angle(18 * u.deg)
-                self.velocity = 1569 * u.km / u.s
+                self.vsys = 1569 * u.km / u.s
                 self.provenance = 'Override'
             elif name.upper() == 'M100':
                 self.name = 'M100'
@@ -144,14 +144,14 @@ class Galaxy(object):
                 #self.center_position = SkyCoord(23.461667,30.660194,unit=(u.deg,u.deg),frame='fk5')
                 self.position_angle = Angle(153 * u.deg)
                 self.inclination = Angle(30 * u.deg)
-                self.velocity = 1575 * u.km / u.s
+                self.vsys = 1575 * u.km / u.s
                 self.provenance = 'Override'
             elif name.upper() == 'M64':
                 self.name = 'M64'
                 self.distance = 4.1e6 * u.pc
                 self.position_angle = Angle(-67.6 * u.deg)
                 self.inclination = Angle(58.9 * u.deg)
-                self.velocity = 411.3 * u.km / u.s
+                self.vsys = 411.3 * u.km / u.s
                 self.provenance = 'Override'
             elif name.upper() == 'NGC4535':
                 self.name = 'NGC4535'
@@ -382,8 +382,7 @@ class Galaxy(object):
     def rotmap(self,header=None, position_angle=None, inclination=None, mode='PHANGS'):
         '''
         Returns "observed velocity" map, and "radius
-        map". (The latter is just to make sure that the
-        code is working properly.)
+        map".
         
         Parameters:
         -----------
@@ -393,9 +392,9 @@ class Galaxy(object):
         header=None : astropy.io.fits.header.Header
             Header for the galaxy.
         position_angle=None : astropy Quantity
-            PA of the galaxy.
+            Override for kinematic PA of the galaxy.
         inclination=None : astropy Quantity
-            Inclination of the galaxy.
+            Override for inclination of the galaxy.
         mode='PHANGS' : str
             'PHANGS'     - Uses PHANGS rotcurve.
             'diskfit12m' - Uses fitted rotcurve from
@@ -416,9 +415,9 @@ class Galaxy(object):
         '''   
         # Basic info
         vsys = self.vsys
-        if vsys==None:
-            vsys = self.velocity
-            # For some reason, some galaxies (M33, NGC4303...) have velocity listed as "velocity" instead of "vsys".
+#        if vsys==None:
+#            vsys = self.velocity
+#            # For some reason, some galaxies (M33, NGC4303...) have velocity listed as "velocity" instead of "vsys".
         if not inclination:
             I = self.inclination
         else:

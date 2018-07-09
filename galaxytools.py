@@ -20,6 +20,27 @@ import rotcurve_tools as rc
 import copy
 import os
 
+def galaxy(name):
+    '''
+    Creates Galaxy object.
+    Features kinematic PA and a quick
+    bandaid fix for missing 'vsys' values!
+    '''
+    gal = Galaxy(name.upper())
+    gal.position_angle = PA_get(gal)
+    
+    if gal.vsys is None or np.isnan(gal.vsys):
+        I_mom1a = mom1_get(gal,data_mode='12m')
+        I_mom1b = mom1_get(gal,data_mode='7m')
+        if I_mom1a is not None:
+            gal.vsys = np.nanmean(I_mom1a)*u.km/u.s
+        elif I_mom1b is not None:
+            gal.vsys = np.nanmean(I_mom1b)*u.km/u.s
+        else:
+            print('WARNING: mom1 maps (7m, 12m+7m) missing. Galaxy object has no vsys.')
+            gal.vsys = np.nan
+    return gal
+    
 def mom0_get(gal,data_mode='',\
              path7m ='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-LP/working_data/osu/',\
              path12m='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-v1p0/'):
@@ -332,6 +353,77 @@ def band_get(gal,hdr=None,band='',res='15',sfr_toggle=False,path='/media/jnofech
         map2d_final = map2d
     return map2d_final
     
+def PA_get(gal):
+    '''
+    Gets the kinematic PA for the
+    indicated galaxy. Used when
+    photometric PA != kinematic PA.    
+    
+    Parameters:
+    -----------
+    gal : str OR Galaxy
+        Name of galaxy, OR Galaxy
+        object.
+        
+    Returns:
+    --------
+    PA : Quantity (float*u.deg)
+        Position angle, in degrees.
+    '''
+    if isinstance(gal,Galaxy):
+        name = gal.name.lower()
+    elif isinstance(gal,str):
+        name = gal.lower()
+#        gal = Galaxy(name.upper())
+        gal = galaxy(name.upper())
+    else:
+        raise ValueError("'gal' must be a str or galaxy!")
+    
+    # Get PA!
+    PA = gal.position_angle / u.deg * u.deg
+    
+    
+    # OVERRIDES
+    # a) PA for galaxies that are missing PA values. Done by eyeballing!
+    if gal.name.lower()=='ic5332':
+        PA = 50.*u.deg
+    if gal.name.lower()=='ngc3059':
+        PA = 350.*u.deg
+    if gal.name.lower()=='ngc3239':
+        PA = None             # Not a disk galaxy.
+    if gal.name.lower()=='ngc3596':
+        PA = 85.*u.deg
+    if gal.name.lower()=='ngc4303':
+        PA = 320.*u.deg       # Set to 0 in galaxies.py, for some reason.
+    if gal.name.lower()=='ngc4571':
+        PA = 230.*u.deg
+    if gal.name.lower()=='ngc4941':
+        PA = 190.*u.deg
+        
+    # b) PA is off by 180 degrees.
+    galaxies_180=['IC5273','NGC1300','NGC1317','NGC1365','NGC1385','NGC1511','NGC1512','NGC1559',\
+                  'NGC1566','NGC1637','NGC2090','NGC2283','NGC2566','NGC2835','NGC3511','NGC4298',\
+                  'NGC4535','NGC4731','NGC4781','NGC4826','NGC5042','NGC5134','NGC5530']
+    if name.upper() in galaxies_180:
+        if PA.value>180.:
+            PA = PA-180.*u.deg
+        else:
+            PA = PA+180.*u.deg
+            
+    # c) PA for galaxies whose photometric PAs are just WAY off from kinematic PAs. Done by eyeballing!
+    if gal.name.lower()=='ngc1433':
+        PA = 190.*u.deg
+    if gal.name.lower()=='ngc3507':
+        PA = 50.*u.deg
+    if gal.name.lower()=='ngc4540':
+        PA = 10.*u.deg
+    if gal.name.lower()=='ngc5128':
+        PA = 310.*u.deg
+    if gal.name.lower()=='ngc5330':
+        PA = 315.*u.deg
+    
+    return PA
+    
 def info(gal,conbeam=None,data_mode=''):
     '''
     Returns basic info from galaxies.
@@ -409,7 +501,7 @@ def info(gal,conbeam=None,data_mode=''):
     # Choose appropriate resolution for SFR map, changing 'conbeam' to match it if necessary.
     res='7p5'
     if beam_arcsec > 7.5*u.arcsec and conbeam is not None:
-        print('(galaxytools.info())     WARNING: Beam is '+str(beam_arcsec)+'", and we want to convolve.')
+        print('(galaxytools.info())     WARNING: Beam is '+str(beam_arcsec)+', and we want to convolve.')
         print('                                  This will use a 15" SFR map instead!')
         res='15'
     
@@ -431,8 +523,8 @@ def info(gal,conbeam=None,data_mode=''):
         hdr,I_mom0, I_tpeak, cube = cube_convolved(gal,conbeam,data_mode) # CONVOLVED moments, with their cube.
         if sfr is not None:
             sfr = convolve_2D(gal,hdr,sfr,conbeam)  # Convolved SFR map.
-    elif sfr is not None:
-        sfr = sfr.value
+#    elif sfr is not None:
+#        sfr = sfr.value
 
     return hdr,beam,I_mom0,I_mom1,I_tpeak,cube,sfr
     
@@ -594,7 +686,7 @@ def sigmas(gal,hdr=None,beam=None,I_mom0=None,I_tpeak=None,alpha=6.7,mode='',sig
         name = gal.name.lower()
     elif isinstance(gal,str):
         name = gal.lower()
-        gal = Galaxy(name.upper())
+        gal = galaxy(name.upper())
     else:
         raise ValueError("'gal' must be a str or galaxy!")
     
@@ -786,7 +878,7 @@ def convolve_2D(gal,hdr,map2d,conbeam):
         name = gal.name.lower()
     elif isinstance(gal,str):
         name = gal.lower()
-        gal = Galaxy(name.upper())
+        gal = galaxy(name.upper())
     else:
         raise ValueError("'gal' must be a str or galaxy!")
     
@@ -845,7 +937,7 @@ def convolve_cube(gal,cube,conbeam,data_mode='',\
         name = gal.name.lower()
     elif isinstance(gal,str):
         name = gal.lower()
-        gal = Galaxy(name.upper())
+        gal = galaxy(name.upper())
     else:
         raise ValueError("'gal' must be a str or galaxy!")
         

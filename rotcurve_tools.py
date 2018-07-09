@@ -55,7 +55,7 @@ def rotcurve(gal,mode='',
         name = gal.name.lower()
     elif isinstance(gal,str):
         name = gal.lower()
-        gal = Galaxy(name.upper())
+        gal = tools.galaxy(name.upper())
     else:
         raise ValueError("'gal' must be a str or galaxy!")
     
@@ -102,12 +102,12 @@ def rotcurve(gal,mode='',
 #     if R[0]!=0:
 #         R = np.roll(np.concatenate((R,[0]),0),1)
 #         vrot = np.roll(np.concatenate((vrot,[0]),0),1)
-    
+
     # Check if rotcurve is valid
     if np.isnan(np.sum(vrot)):
         print('ERROR: Rotcurve failed to generate!')
         return [np.nan]*4
-    
+
     # BSpline interpolation of vrot(R)
     K=3                # Order of the BSpline
     t,c,k = interpolate.splrep(R,vrot,s=0,k=K)
@@ -265,8 +265,7 @@ def epicycles(R,vrot):
     
     return k
     
-
-def rotmap(gal,header,mode='PHANGS'):
+def rotmap(gal,header,position_angle=None,inclination=None,mode='PHANGS'):
     '''
     Returns "observed velocity" map, and "radius
     map". (The latter is just to make sure that the
@@ -279,6 +278,13 @@ def rotmap(gal,header,mode='PHANGS'):
         object.
     header : astropy.io.fits.header.Header
         Header for the galaxy.
+    position_angle=None : astropy.units.Quantity
+        Override for KINEMATIC position
+        angle, in degrees. The Galaxy
+        object's photometric PA value
+        will be used if not specified.
+    inclination=None : astropy.units.Quantity
+        Override for inclination, in degrees.
     mode='PHANGS' : str
         'PHANGS'     - Uses PHANGS rotcurve.
         'diskfit12m' - Uses fitted rotcurve from
@@ -304,19 +310,23 @@ def rotmap(gal,header,mode='PHANGS'):
         name = gal.name.lower()
     elif isinstance(gal,str):
         name = gal.lower()
-        gal = Galaxy(name.upper())
+        gal = tools.galaxy(name.upper())
     else:
         raise ValueError("'gal' must be a str or galaxy!")
     
     vsys = gal.vsys
-    if vsys==None:
-        vsys = gal.velocity
-        # For some reason, some galaxies (M33, NGC4303...) have velocity listed as "velocity" instead of "vsys".
-    I = gal.inclination
+    
+    if not inclination:
+        I = gal.inclination
+    else:
+        I = inclination
+    if not position_angle:
+        PA = (gal.position_angle / u.deg * u.deg)        # Position angle (angle from N to line of nodes)
+    else:
+        PA = position_angle
+        
     RA_cen = gal.center_position.ra / u.deg * u.deg          # RA of center of galaxy, in degrees 
     Dec_cen = gal.center_position.dec / u.deg * u.deg        # Dec of center of galaxy, in degrees
-    PA = (gal.position_angle / u.deg * u.deg)        # Position angle (angle from N to line of nodes)
-                                                     # NOTE: The x-direction is defined as the LoN.
     d = (gal.distance).to(u.parsec)                  # Distance to galaxy, from Mpc to pc
 
     # vrot Interpolation
@@ -511,7 +521,7 @@ def linewidth_iso(gal,beam=None,smooth='spline',knots=8,mode='PHANGS'):
         name = gal.name.lower()
     elif isinstance(gal,str):
         name = gal.lower()
-        gal = Galaxy(name.upper())
+        gal = tools.galaxy(name.upper())
     else:
         raise ValueError("'gal' must be a str or galaxy!")
     
