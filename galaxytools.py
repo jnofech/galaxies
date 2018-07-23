@@ -28,6 +28,7 @@ def galaxy(name):
     '''
     gal = Galaxy(name.upper())
     gal.position_angle = PA_get(gal)
+    gal.inclination    = incl_get(gal)
     
     if gal.vsys is None or np.isnan(gal.vsys):
         I_mom1a = mom1_get(gal,data_mode='12m')
@@ -178,7 +179,7 @@ def hdr_get(gal,data_mode='',\
     elif data_mode in ['12m','12m+7m']:
         data_mode = '12m+7m'  
     elif data_mode=='':
-        print('No data_mode set. Defaulted to 12m+7m.')
+        print('tools.hdr_get():    WARNING: No data_mode set. Defaulted to 12m+7m.')
         data_mode = '12m+7m'
     
     hdr = None
@@ -210,19 +211,23 @@ def hdr_get(gal,data_mode='',\
         hdr = None
     return hdr
 
-def sfr_get(gal,hdr=None,conbeam=None,res='7p5',autocorrect=True,\
+def sfr_get(gal,hdr=None,conbeam=None,res='7p5',band_uv='nuv',band_ir='w3',autocorrect=False,\
             path='/media/jnofech/BigData/PHANGS/Archive/galex_and_wise/'):
     '''
-    Uses NUV band + WISE Band 3.
+    Recommended: NUV band + WISE Band 3.
     
     The 'res' can be '7p5' or '15',
         i.e. 7.5" SFR data or 15" data.
+    The band_uv can be 'fuv', 'nuv', or None.
+    The band_ir can be 'w3' or 'w4', or None.
+        For 7.5" (i.e. best) data, 'nuv'+'w3'
+        are recommended.
     The 7.5" is better, but keep in mind
         that some cubes have beam widths
         too high to be convolved to such
         a high resolution. For these cases,
         stick with the 15" SFR maps.
-    autocorrect=True : bool
+    autocorrect=False : bool
         Toggles whether to revert to 15"
         data if 7.5" is missing.
         Recommended to DISABLE if you need
@@ -235,35 +240,48 @@ def sfr_get(gal,hdr=None,conbeam=None,res='7p5',autocorrect=True,\
         name = gal.lower()
     else:
         raise ValueError("'gal' must be a str or galaxy!")
-    # Be sure to change 'gauss15' to 'gauss7p5' when better data becomes available!
-#     filename = path+name+'_sfr_fuvw4_gauss15.fits'        # Galex FUV band + WISE Band 4 (old version)
-#     filename = path+name+'_sfr_nuvw3_gauss15.fits'        # Galex NUV band + WISE Band 3
-#     if os.path.isfile(filename):
-#         sfr_map = Projection.from_hdu(fits.open(filename))
-#     else:
-#         print('WARNING: No SFR map was found!')
-#         sfr_map = None
-#         return sfr_map
-#     if hdr!=None:
-#         sfr = sfr_map.reproject(hdr) # Msun/yr/kpc^2. See header.
-#                                      # https://www.aanda.org/articles/aa/pdf/2015/06/aa23518-14.pdf
-#     else:
-#         sfr = sfr_map
-
-    map1      = band_get(gal,hdr,'nuv',res,sfr_toggle=False)    # Galex NUV band.
-    map2      = band_get(gal,hdr,'w3',res,sfr_toggle=False)     # WISE3 band.
-    if map1 is not None and map2 is not None:
-        sfr     = (map1*1.04e-1+map2*3.77e-3).value   # Sum of SFR contributions, in Msun/yr/kpc**2.
-    elif res=='7p5' and autocorrect==True:
-        print('(galaxytools.sfr_get())  WARNING: Unable to get 7.5" SFR map! Reverting to 15" instead.')
-        sfr = sfr_get(gal,hdr,conbeam,'15',path)
-        return sfr
+        
+    # Convert the UV and IR maps to Msun/yr/kpc**2!
+    if band_uv!=None:
+        if band_uv.lower() in ['fuv','nuv']:
+            uv_to_sfr = 1.04e-1
+        else:
+            raise ValueError('(galaxytools.sfr_get())  Invalid \'band_uv\'. Must be \'fuv\' or \'nuv\'!')
+    if band_ir!=None:
+        if band_ir.lower()=='w3':
+            ir_to_sfr = 3.77e-3
+        elif band_ir.lower()=='w4':
+            ir_to_sfr = 3.24e-3
+        else:
+            raise ValueError('(galaxytools.sfr_get())  Invalid \'band_ir\'. Must be \'w3\' or \'w4\'!')
+    
+    # Get the map for each band!
+    map_uv      = band_get(gal,hdr,band_uv,res,sfr_toggle=False)    # Galex NUV band.
+    map_ir      = band_get(gal,hdr,band_ir,res,sfr_toggle=False)     # WISE3 band.
+    
+    # Actually generate the SFR map!
+    if map_uv is not None and map_ir is not None:
+        sfr     = (map_uv*uv_to_sfr + map_ir*ir_to_sfr).value   # Sum of SFR contributions, in Msun/yr/kpc**2.
+    elif map_uv is None and band_uv==None and map_ir is not None and band_ir!=None:
+        # If UV is intentionally missing:
+#         print('(galaxytools.sfr_get())  WARNING: Only considering IR ('+band_ir+') component.')
+        sfr     = (map_ir*ir_to_sfr).value             # SFR from just IR contribution.
+    elif map_ir is None and band_ir==None and map_uv is not None and band_uv!=None:
+        # If IR is intentionally missing:
+#         print('(galaxytools.sfr_get())  WARNING: Only considering UV ('+band_uv+') component.')
+        sfr     = (map_uv*uv_to_sfr).value             # SFR from just UV contribution.
     else:
-        print('(galaxytools.sfr_get())  WARNING: No '+str(res)+'" SFR map was found!')
+        print('(galaxytools.sfr_get())  WARNING: No '+str(res)+'" '+str(band_uv)\
+              +'+'+str(band_ir)+' SFR map was found!')
         sfr = None
+    
+    # Autocorrect with 15" version?
+    if sfr is None and res=='7p5' and autocorrect==True:
+        print('(galaxytools.sfr_get())  WARNING: Unable to get 7.5" SFR map! Reverting to 15" instead.')
+        sfr = sfr_get(gal,hdr,conbeam,band_uv,band_ir,'15',False,path)
         return sfr
 
-    if conbeam!=None:
+    if sfr is not None and conbeam!=None:
         sfr = convolve_2D(gal,hdr,sfr,conbeam)  # Convolved SFR map.
     return sfr
             
@@ -316,7 +334,7 @@ def band_get(gal,hdr=None,band='',res='15',sfr_toggle=False,path='/media/jnofech
     hdr : fits.header.Header
         Header for the galaxy.
     band : str
-        FUV = Galex NUV band (???-??? nm)
+        FUV = Galex FUV band (???-??? nm)
         NUV = Galex NUV band (150-220 nm)
         W3 = WISE Band 3 (12 µm data)
         W4 = WISE Band 4 (22 µm data)
@@ -325,7 +343,7 @@ def band_get(gal,hdr=None,band='',res='15',sfr_toggle=False,path='/media/jnofech
         '7p5' - 7.5" resolution.
         '15'  - 15" resolution.
     sfr_toggle=False : bool
-        Toggles whether to find the
+        Toggles whether to read the
         SFR contribution (Msun/yr/kpc^2)
         directly. Disabled by default
         since these files aren't always
@@ -338,6 +356,10 @@ def band_get(gal,hdr=None,band='',res='15',sfr_toggle=False,path='/media/jnofech
     else:
         raise ValueError("'gal' must be a str or galaxy!")
 
+    if band is None:
+#         print('(galaxytools.band_get()) WARNING: No band selected! Returning None.')
+        return None
+    
     filename = path+name+'_'+(sfr_toggle*'sfr_')+band+'_gauss'+res+'.fits'
     if os.path.isfile(filename):
         map2d = Projection.from_hdu(fits.open(filename))        # Not necessarily in Msun/yr/kpc**2. Careful!
@@ -396,13 +418,13 @@ def PA_get(gal):
     if gal.name.lower()=='ngc4303':
         PA = 320.*u.deg       # Set to 0 in galaxies.py, for some reason.
     if gal.name.lower()=='ngc4571':
-        PA = 230.*u.deg
+        PA = 210.*u.deg
     if gal.name.lower()=='ngc4941':
         PA = 190.*u.deg
         
     # b) PA is off by 180 degrees.
-    galaxies_180=['IC5273','NGC1300','NGC1317','NGC1365','NGC1385','NGC1511','NGC1512','NGC1559',\
-                  'NGC1566','NGC1637','NGC2090','NGC2283','NGC2566','NGC2835','NGC3511','NGC4298',\
+    galaxies_180=['IC5273','NGC1300','NGC1365','NGC1385','NGC1511','NGC1512','NGC1559',\
+                  'NGC1637','NGC2090','NGC2283','NGC2566','NGC2835','NGC3511','NGC4298',\
                   'NGC4535','NGC4731','NGC4781','NGC4826','NGC5042','NGC5134','NGC5530']
     if name.upper() in galaxies_180:
         if PA.value>180.:
@@ -421,10 +443,54 @@ def PA_get(gal):
         PA = 310.*u.deg
     if gal.name.lower()=='ngc5330':
         PA = 315.*u.deg
+    if gal.name.lower()=='ngc1317':
+        PA = 215.*u.deg
+    if gal.name.lower()=='ngc1566':
+        PA = 205.*u.deg
+    if gal.name.lower()=='ngc5068':
+        PA = 335.*u.deg
     
     return PA
     
-def info(gal,conbeam=None,data_mode=''):
+def incl_get(gal):
+    '''
+    Gets the inclination PA for the
+    indicated galaxy, if the provided
+    one happens to look a bit off.
+    (Basically, just NGC1512 for now.)
+    
+    Parameters:
+    -----------
+    gal : str OR Galaxy
+        Name of galaxy, OR Galaxy
+        object.
+        
+    Returns:
+    --------
+    incl : Quantity (float*u.deg)
+        Inclination, in degrees.
+    '''
+    if isinstance(gal,Galaxy):
+        name = gal.name.lower()
+    elif isinstance(gal,str):
+        name = gal.lower()
+        print('New Galaxy object created for '+name+'!')
+        gal = Galaxy(name.upper())
+    else:
+        raise ValueError("'gal' must be a str or galaxy!")
+    
+    # Get incl!
+    incl = gal.inclination / u.deg * u.deg
+    
+    
+    # OVERRIDES
+    # Done by eyeballing!
+    if gal.name.lower()=='ngc1512':
+        print('galaxytools.incl_get():  Overwrote inclination with an eyeballed value. May not be accurate!')
+        incl = 45.*u.deg
+    return incl
+    
+def info(gal,conbeam=None,data_mode='',sfr_band_uv='nuv',sfr_band_ir='w3',sfr_autocorrect=False):
     '''
     Returns basic info from galaxies.
     Astropy units are NOT attached to outputs.
@@ -441,6 +507,16 @@ def info(gal,conbeam=None,data_mode=''):
     data_mode='12m' or '7m' : str
         Chooses either 12m data or 7m
         data.
+    sfr_band_uv='nuv' : str
+        Selects 'fuv' or 'nuv' as UV
+        band for SFR.
+    sfr_band_ir='w3' : str
+        Selects 'w3' or 'w4' as IR
+        band for SFR.
+        NOTE: nuv+w3 recommended.
+    sfr_autocorrect=False : bool
+        Attempts to get a 15" SFR
+        map if the 7.5" one fails.
         
     Returns:
     --------
@@ -506,15 +582,18 @@ def info(gal,conbeam=None,data_mode=''):
         res='15'
     
     # Get SFR at this resolution.
-    sfr = sfr_get(gal,hdr,res=res,autocorrect=False) # Not convolved yet, despite that being an option.
-    if res=='7p5' and sfr is None:     # If the 7.5" isn't found:
-        print('(galaxytools.info())              Will attempt a 15" SFR map instead!')
-        res='15'
-        sfr = sfr_get(gal,hdr,res=res)               # Try again with lower resolution.
-    if res=='15' and sfr is not None:  # If a 15" SFR map was successful:
-        if conbeam==7.5*u.arcsec:
-            print('(galaxytools.info())     NOTE:    The 15" SFR map was successful! Changing conbeam from 7.5" to 15".')
-            conbeam=15.*u.arcsec
+    sfr = sfr_get(gal,hdr,res=res,band_uv=sfr_band_uv,band_ir=sfr_band_ir,autocorrect=False) 
+    #     Not convolved yet, despite that being an option.
+    
+    if sfr_autocorrect==True:
+        if res=='7p5' and sfr is None:     # If the 7.5" isn't found:
+            print('(galaxytools.info())              Will attempt a 15" SFR map instead!')
+            res='15'
+            sfr = sfr_get(gal,hdr,res=res,band_uv=sfr_band_uv,band_ir=sfr_band_ir) # Try again with lower resolution.
+        if res=='15' and sfr is not None:  # If a 15" SFR map was successful:
+            if conbeam==7.5*u.arcsec:
+                print('(galaxytools.info())     NOTE:    The 15" SFR map was successful! Changing conbeam from 7.5" to 15".')
+                conbeam=15.*u.arcsec
     cube = cube_get(gal,data_mode)
         
         
@@ -631,7 +710,7 @@ def map2D_to_1D(rad,maps,stride=1):
     # Returning everything!
     return rad1D,maps
 
-def sigmas(gal,hdr=None,beam=None,I_mom0=None,I_tpeak=None,alpha=6.7,mode='',sigmode=''):
+def sigmas(gal,hdr=None,I_mom0=None,I_tpeak=None,alpha=6.7,mode='',sigmode=''):
     '''
     Returns things like 'sigma' (line width, in km/s)
     or 'Sigma' (surface density) for a galaxy. The
@@ -644,10 +723,6 @@ def sigmas(gal,hdr=None,beam=None,I_mom0=None,I_tpeak=None,alpha=6.7,mode='',sig
         object.
     hdr=None : astropy.io.fits.header.Header
         Header for the galaxy.
-        Will be found automatically if not
-        specified.
-    beam=None : float
-        Beam width, in deg.
         Will be found automatically if not
         specified.
     I_mom0=None : np.ndarray
@@ -686,7 +761,7 @@ def sigmas(gal,hdr=None,beam=None,I_mom0=None,I_tpeak=None,alpha=6.7,mode='',sig
         name = gal.name.lower()
     elif isinstance(gal,str):
         name = gal.lower()
-        gal = galaxy(name.upper())
+        gal = Galaxy(name.upper())
     else:
         raise ValueError("'gal' must be a str or galaxy!")
     
@@ -694,19 +769,19 @@ def sigmas(gal,hdr=None,beam=None,I_mom0=None,I_tpeak=None,alpha=6.7,mode='',sig
     if hdr==None:
         print('galaxytools.sigmas(): WARNING: Header found automatically. Check that it\'s correct!')
         hdr = hdr_get(gal)
-    # Beam width
-    if beam==None:
-        beam = hdr['BMAJ']
+    # Moments
     if I_mom0 is None:
-        print('galaxytools.sigmas(): I_mom0 found automatically.')
+        print('galaxytools.sigmas(): WARNING: I_mom0 found automatically.')
         I_mom0 = mom0_get(gal)
     if I_tpeak is None:
-        print('galaxytools.sigmas(): I_tpeak found automatically.')
+        print('galaxytools.sigmas(): WARNING: I_tpeak found automatically.')
         I_tpeak = tpeak_get(gal)
     
     if mode=='':
         print('WARNING: No \'mode\' selected for galaxytools.sigmas()!\n        Will determine min and max \'rad\' values using PHANGS rotcurve.')
         mode='PHANGS'
+    
+    # (!!!) Ensure beforehand that the PA is kinematic, not photometric!
     x, rad, x, x = gal.rotmap(header=hdr,mode=mode)
     d = gal.distance
     d = d.to(u.pc)                                          # Converts d from Mpc to pc.
@@ -718,9 +793,6 @@ def sigmas(gal,hdr=None,beam=None,I_mom0=None,I_tpeak=None,alpha=6.7,mode='',sig
     pixsizes = pixsizes_deg[0].to(u.rad)                    # Pixel size, in radians.
     pcperpixel =  pixsizes.value*d                          # Number of parsecs per pixel.
     pcperdeg = pcperpixel / pixsizes_deg[0]
-
-    # Beam
-    beam = beam * pcperdeg                                  # Beam size, in pc
 
     # Line width, Surface density
     #alpha = 6.7  # (???) Units: (Msun pc^-2) / (K km s^-1)

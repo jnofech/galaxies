@@ -491,7 +491,7 @@ def linewidth_iso(gal,beam=None,smooth='spline',knots=8,mode='PHANGS'):
     beam=None : float
         Beam width, in deg.
         Will be found automatically if not
-        specified.
+        specified. (NOT RECOMMENDED!)
     smooth='spline' : str
         Determines smoothing for rotation curve.
         Available modes:
@@ -527,7 +527,7 @@ def linewidth_iso(gal,beam=None,smooth='spline',knots=8,mode='PHANGS'):
     
     # Beam width
     if beam==None:
-        print('rc.linewidth_iso(): Beam size found automatically.')
+        print('rc.linewidth_iso(): WARNING: Beam size found automatically. This is NOT recommended!')
         hdr = tools.hdr_get(gal)
         beam = hdr['BMAJ']
     beam = beam*u.deg.to(u.rad)                 # Beam size, in radians
@@ -536,7 +536,8 @@ def linewidth_iso(gal,beam=None,smooth='spline',knots=8,mode='PHANGS'):
     
     # Use "interp" to generate R, vrot (smoothed), k (epicyclic frequency).
     R, vrot, R_e, vrot_e = gal.rotcurve(mode=mode)
-    k = epicycles(R,vrot)
+    R, vrot_s            = rotcurve_smooth(R,vrot,R_e,vrot_e,smooth=smooth,knots=knots)
+    k = epicycles(R,vrot_s)
     
     # Calculate sigma_gal = kappa*Rc
     sigma_gal = k(R)*Rc
@@ -555,5 +556,3 @@ def linewidth_iso(gal,beam=None,smooth='spline',knots=8,mode='PHANGS'):
     #sigma_gal_spline = interpolate.BSpline(t,c,k, extrapolate=False)     # Cubic interpolation of sigma_gal(R).
     
     return sigma_gal
-
-
