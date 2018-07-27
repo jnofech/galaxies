@@ -337,8 +337,9 @@ class Galaxy(object):
 #                print('NOTE: Custom rotcurve not found-- using procedurally-generated rotcurve instead!')
             R, vrot, vrot_e = np.loadtxt(fname,skiprows=True,unpack=True)
         elif mode.lower()=='diskfit7m':
-            fname = rcdir+'diskfit7m/'+self.name.lower()+"_co21_7m_RC.txt"         # Not on server.
-            if not os.path.isfile(fname):
+            fname = rcdir+'diskfit7m/'+self.name.lower()+"_co21_7m_RC.txt"  # Not on server.
+            use_old = False    # Enable if you want to use the rotcurves from the older, smaller dataset.
+            if use_old==False or not os.path.isfile(fname):
                 fname = rcdir+'diskfit7m/'+self.name.lower()+"_co21_7m_RC_procedural.txt"  # Not on server. Procedural.
 #                print('NOTE: Custom rotcurve not found-- using procedurally-generated rotcurve instead!')
             R, vrot, vrot_e = np.loadtxt(fname,skiprows=True,unpack=True)

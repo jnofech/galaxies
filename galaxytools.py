@@ -31,8 +31,8 @@ def galaxy(name):
     gal.inclination    = incl_get(gal)
     
     if gal.vsys is None or np.isnan(gal.vsys):
-        I_mom1a = mom1_get(gal,data_mode='12m')
-        I_mom1b = mom1_get(gal,data_mode='7m')
+        I_mom1a = mom1_get(gal,data_mode='12m',verbose=False)
+        I_mom1b = mom1_get(gal,data_mode='7m',verbose=False)
         if I_mom1a is not None:
             gal.vsys = np.nanmean(I_mom1a)*u.km/u.s
         elif I_mom1b is not None:
@@ -83,7 +83,7 @@ def mom0_get(gal,data_mode='',\
         print('WARNING: No mom0 was found!')
     return I_mom0
 
-def mom1_get(gal,data_mode='',\
+def mom1_get(gal,data_mode='',return_best=False, verbose=True,\
              path7m ='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-LP/working_data/osu/',\
              path12m='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-v1p0/'):
     if isinstance(gal,Galaxy):
@@ -97,11 +97,13 @@ def mom1_get(gal,data_mode='',\
     elif data_mode in ['12m','12m+7m']:
         data_mode = '12m+7m'  
     elif data_mode=='':
-        print('No data_mode set. Defaulted to 12m+7m.')
+        if verbose==True:
+            print('No data_mode set. Defaulted to 12m+7m.')
         data_mode = '12m+7m' 
 
     # Get the mom1 file. In K km/s.
     I_mom1=None
+    best_mom1='7m'                # Keeps track of whether 7m or 7m+tp is available. Returning this is optional.
     if data_mode=='7m':
         path = path7m
         filename_7mtp = name+'_'+data_mode+'+tp_co21_mom1.fits'    # 7m+tp mom1. Ideal.
@@ -109,7 +111,9 @@ def mom1_get(gal,data_mode='',\
         if os.path.isfile(path+filename_7mtp):
             I_mom1 = fits.getdata(path+filename_7mtp)
         elif os.path.isfile(path+filename_7m):
-            print('No 7m+tp mom1 found. Using 7m mom1 instead.')
+            if verbose==True:
+                print('No 7m+tp mom1 found. Using 7m mom1 instead.')
+            best_mom1='7m+tp'
             I_mom1 = fits.getdata(path+filename_7m)
     elif data_mode=='12m+7m':
         path = path12m
@@ -120,9 +124,16 @@ def mom1_get(gal,data_mode='',\
         print('WARNING: Invalid data_mode-- No mom1 was found!')
         I_mom1 = None
         return I_mom1
+    
     if I_mom1 is None:
-        print('WARNING: No mom1 was found!')
-    return I_mom1
+        if verbose==True:
+            print('WARNING: No mom1 was found!')
+        return None
+    
+    if return_best==True:
+        return I_mom1, best_mom1
+    else:
+        return I_mom1
 
 def tpeak_get(gal,data_mode='',\
              path7m ='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-LP/working_data/osu/',\
@@ -179,7 +190,7 @@ def hdr_get(gal,data_mode='',\
     elif data_mode in ['12m','12m+7m']:
         data_mode = '12m+7m'  
     elif data_mode=='':
-        print('tools.hdr_get():    WARNING: No data_mode set. Defaulted to 12m+7m.')
+        print('No data_mode set. Defaulted to 12m+7m.')
         data_mode = '12m+7m'
     
     hdr = None
@@ -424,7 +435,7 @@ def PA_get(gal):
         
     # b) PA is off by 180 degrees.
     galaxies_180=['IC5273','NGC1300','NGC1365','NGC1385','NGC1511','NGC1512','NGC1559',\
-                  'NGC1637','NGC2090','NGC2283','NGC2566','NGC2835','NGC3511','NGC4298',\
+                  'NGC1637','NGC1792','NGC2090','NGC2283','NGC2566','NGC2835','NGC3511','NGC4298',\
                   'NGC4535','NGC4731','NGC4781','NGC4826','NGC5042','NGC5134','NGC5530']
     if name.upper() in galaxies_180:
         if PA.value>180.:
@@ -449,6 +460,10 @@ def PA_get(gal):
         PA = 205.*u.deg
     if gal.name.lower()=='ngc5068':
         PA = 335.*u.deg
+    if gal.name.lower()=='ngc5643':
+        PA = 315.*u.deg
+    if gal.name.lower()=='ngc1385':
+        PA = 170.*u.deg
     
     return PA
     
@@ -582,18 +597,17 @@ def info(gal,conbeam=None,data_mode='',sfr_band_uv='nuv',sfr_band_ir='w3',sfr_au
         res='15'
     
     # Get SFR at this resolution.
-    sfr = sfr_get(gal,hdr,res=res,band_uv=sfr_band_uv,band_ir=sfr_band_ir,autocorrect=False) 
+    sfr = sfr_get(gal,hdr,res=res,band_uv=sfr_band_uv,band_ir=sfr_band_ir,autocorrect=sfr_autocorrect) 
     #     Not convolved yet, despite that being an option.
     
-    if sfr_autocorrect==True:
-        if res=='7p5' and sfr is None:     # If the 7.5" isn't found:
-            print('(galaxytools.info())              Will attempt a 15" SFR map instead!')
-            res='15'
-            sfr = sfr_get(gal,hdr,res=res,band_uv=sfr_band_uv,band_ir=sfr_band_ir) # Try again with lower resolution.
-        if res=='15' and sfr is not None:  # If a 15" SFR map was successful:
-            if conbeam==7.5*u.arcsec:
-                print('(galaxytools.info())     NOTE:    The 15" SFR map was successful! Changing conbeam from 7.5" to 15".')
-                conbeam=15.*u.arcsec
+    if res=='7p5' and sfr is None and sfr_autocorrect==True:  # If 7.5" isn't found and we want to try lower res:
+        print('(galaxytools.info())              Will attempt a 15" SFR map instead!')
+        res='15'
+        sfr = sfr_get(gal,hdr,res=res,band_uv=sfr_band_uv,band_ir=sfr_band_ir) # Try again with lower resolution.
+    if res=='15' and sfr is not None:  # If a 15" SFR map was successful:
+        if conbeam==7.5*u.arcsec:
+            print('(galaxytools.info())     NOTE:    The 15" SFR map was successful! Changing conbeam from 7.5" to 15".')
+            conbeam=15.*u.arcsec
     cube = cube_get(gal,data_mode)
         
         
@@ -602,8 +616,6 @@ def info(gal,conbeam=None,data_mode='',sfr_band_uv='nuv',sfr_band_ir='w3',sfr_au
         hdr,I_mom0, I_tpeak, cube = cube_convolved(gal,conbeam,data_mode) # CONVOLVED moments, with their cube.
         if sfr is not None:
             sfr = convolve_2D(gal,hdr,sfr,conbeam)  # Convolved SFR map.
-#    elif sfr is not None:
-#        sfr = sfr.value
 
     return hdr,beam,I_mom0,I_mom1,I_tpeak,cube,sfr
     

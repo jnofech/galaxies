@@ -79,7 +79,8 @@ def rotcurve(gal,mode='',
         R, vrot, vrot_e = np.loadtxt(fname,skiprows=True,unpack=True)
     elif mode.lower()=='diskfit7m':
         fname = rcdir+'diskfit7m/'+name.lower()+"_co21_7m_RC.txt"         # Not on server.
-        if not os.path.isfile(fname):
+        use_old = False    # Enable if you want to use the rotcurves from the older, smaller dataset.
+        if use_old==False or not os.path.isfile(fname):
             fname = rcdir+'diskfit7m/'+name.lower()+"_co21_7m_RC_procedural.txt"  # Not on server. Procedural.
 #             print('NOTE: Custom rotcurve not found-- using procedurally-generated rotcurve instead!')
         R, vrot, vrot_e = np.loadtxt(fname,skiprows=True,unpack=True)
@@ -162,10 +163,11 @@ def rotcurve_smooth(R,vrot,R_e,vrot_e=None,smooth='spline',knots=8):
         return [np.nan]*2
     
     # Check if any error values are exactly zero
-    if vrot_e[vrot_e==0].size>0:
-        print('WARNING (rotcurve_tools.rotcurve_smooth) : \
-        vrot_e has at least one value that is exactly zero. Will change to 1e-9.')
-        vrot_e[vrot_e==0] = 1e-9
+    if vrot_e is not None:
+        if vrot_e[vrot_e==0].size>0:
+            print('WARNING (rotcurve_tools.rotcurve_smooth) : \
+            vrot_e has at least one value that is exactly zero. Will change to 1e-9.')
+            vrot_e[vrot_e==0] = 1e-9
         
     # SMOOTHING:
     if smooth==None or smooth.lower()=='none':
@@ -206,7 +208,7 @@ def rotcurve_smooth(R,vrot,R_e,vrot_e=None,smooth='spline',knots=8):
             
         params, params_covariance = optimize.curve_fit(\
                                         vcirc_universal,R_e,vrot(R_e),p0=(1,1,600),sigma=vrot_e,\
-                                        bounds=((0,0.01,0),(np.inf,np.inf,np.inf)))
+                                        bounds=((0,0.01,0.01),(np.inf,np.inf,np.inf)))
         print( "v0,a,rmax = "+str(params))
         vrot_u = vcirc_universal(R,params[0],params[1],params[2])  # Array.
 
