@@ -7,6 +7,7 @@ import astropy.wcs as wcs
 from astropy.wcs import WCS
 from astropy.table import Table
 from astropy.convolution import convolve_fft, Gaussian2DKernel
+from astropy.coordinates import SkyCoord, Angle, FK5
 from spectral_cube import SpectralCube, Projection
 from radio_beam import Beam
 
@@ -40,6 +41,55 @@ def galaxy(name):
         else:
             print('WARNING: mom1 maps (7m, 12m+7m) missing. Galaxy object has no vsys.')
             gal.vsys = np.nan
+    
+    # Custom central coordinates, in case provided values are very incorrect
+    if gal.name.lower()=='ic5332':
+        # Central coords look more reasonable, but unsure of effect on rotcurve..
+        gal.center_position = SkyCoord(353.603, gal.center_position.dec.value,\
+                                       unit=(u.deg, u.deg), frame='fk5')
+    if gal.name.lower()=='ngc1385':
+        # Noticeable improvement on RC!
+        gal.center_position = SkyCoord(54.371, -24.502,\
+                                       unit=(u.deg, u.deg), frame='fk5')
+#    if gal.name.lower()=='ngc1559':
+#        # Central coords look more reasonable, and mom1 data is now in two tight "trends"
+#        # rather than being everywhere. RC got worse, though.
+#        gal.center_position = SkyCoord(64.405, -62.7855,\
+#                                       unit=(u.deg, u.deg), frame='fk5')
+    if gal.name.lower()=='ngc2775':
+        # Central coords look more reasonable, and mom1 data is now focused into one "trend"
+        # (with much more scatter) rather than being in two tighter trends. RC looks better.
+        gal.center_position = SkyCoord(137.582, 7.037970066070557,\
+                                       unit=(u.deg, u.deg), frame='fk5')
+    if gal.name.lower()=='ngc4207':
+        # Central coords look more reasonable, and mom1 data is focused more into one of
+        # the two "trends". RC looks better, but the error bars are much, much worse.
+        gal.center_position = SkyCoord(183.879, 9.584930419921875,\
+                                   unit=(u.deg, u.deg), frame='fk5')
+    if gal.name.lower()=='ngc4254':
+        # Central coords look MUCH more reasonable.
+        # Much of the mom1 data is still below zero for some reason. Improved, but nowhere near perfect.
+        gal.center_position = SkyCoord(184.718, gal.center_position.dec.value,\
+                                       unit=(u.deg, u.deg), frame='fk5')
+#    if gal.name.lower()=='ngc4694':
+#        # No effect whatsoever. Mom1 too low-res to tell if the coords are more reasonable, anyways.
+#        gal.center_position = SkyCoord(192.064, 10.9838,\
+#                                   unit=(u.deg, u.deg), frame='fk5')
+    if gal.name.lower()=='ngc4731':
+        # Central coords look somewhat more reasonable. RC is horribly jagged and dips into negatives,
+        # but is still a huge improvement.
+        gal.center_position = SkyCoord(192.750, -6.39,\
+                                   unit=(u.deg, u.deg), frame='fk5')
+#    if gal.name.lower()=='ngc4781':
+#        # It got worse. Discard.
+#        gal.center_position = SkyCoord(193.596, -10.5366,\
+#                                       unit=(u.deg, u.deg), frame='fk5')
+    if gal.name.lower()=='ngc5068':
+        # Central seems better if you compare mom1 image to other NED images, but unsure if the
+        # new coords are more reasonable. Mom1 data went from 2 trends to 1 trend+more scatter.
+        # RC is somewhat jaggier, but still has very small errors.
+        gal.center_position = SkyCoord(199.7033, -21.045,\
+                                       unit=(u.deg, u.deg), frame='fk5')
     return gal
     
 def mom0_get(gal,data_mode='',\
@@ -464,6 +514,8 @@ def PA_get(gal):
         PA = 315.*u.deg
     if gal.name.lower()=='ngc1385':
         PA = 170.*u.deg
+    if gal.name.lower()=='ngc0685':
+        PA = 100.*u.deg
     
     return PA
     
