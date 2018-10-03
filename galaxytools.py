@@ -136,6 +136,9 @@ def mom0_get(gal,data_mode='',\
 def mom1_get(gal,data_mode='',return_best=False, verbose=True,\
              path7m ='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-LP/working_data/osu/',\
              path12m='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-v1p0/'):
+    '''
+    data_mode = '7m','12m','12m+7m'
+    '''
     if isinstance(gal,Galaxy):
         name = gal.name.lower()
     elif isinstance(gal,str):
@@ -146,31 +149,65 @@ def mom1_get(gal,data_mode='',return_best=False, verbose=True,\
         data_mode = '7m'
     elif data_mode in ['12m','12m+7m']:
         data_mode = '12m+7m'  
+    elif data_mode.lower() in ['both','hybrid']:
+        data_mode = 'hybrid'  
     elif data_mode=='':
         if verbose==True:
             print('No data_mode set. Defaulted to 12m+7m.')
         data_mode = '12m+7m' 
 
     # Get the mom1 file. In K km/s.
-    I_mom1=None
-    best_mom1='7m'                # Keeps track of whether 7m or 7m+tp is available. Returning this is optional.
-    if data_mode=='7m':
+    I_mom1     = None
+    I_mom1_7m  = None
+    I_mom1_12m = None
+    if data_mode in ['7m','hybrid']:
+        data_mode_name = '7m'
         path = path7m
-        filename_7mtp = name+'_'+data_mode+'+tp_co21_mom1.fits'    # 7m+tp mom1. Ideal.
-        filename_7m   = name+'_'+data_mode+   '_co21_mom1.fits'    # 7m mom1. Less reliable.
+        filename_7mtp = name+'_'+data_mode_name+'+tp_co21_mom1.fits'    # 7m+tp mom1. Ideal.
+        filename_7m   = name+'_'+data_mode_name+   '_co21_mom1.fits'    # 7m mom1. Less reliable.
         if os.path.isfile(path+filename_7mtp):
-            I_mom1 = fits.getdata(path+filename_7mtp)
+            I_mom1_7m = fits.open(path+filename_7mtp,mode='update')
+            best_mom1_7m='7m'      # Keeps track of whether 7m or 7m+tp is available. Returning this is optional.
         elif os.path.isfile(path+filename_7m):
             if verbose==True:
                 print('No 7m+tp mom1 found. Using 7m mom1 instead.')
-            best_mom1='7m+tp'
-            I_mom1 = fits.getdata(path+filename_7m)
-    elif data_mode=='12m+7m':
+            best_mom1_7m='7m+tp'
+            I_mom1_7m = fits.open(path+filename_7m,mode='update')
+        else:
+            best_mom1_7m = 'None'
+        best_mom1 = best_mom1_7m
+        I_mom1 = I_mom1_7m[0].data
+    if data_mode in ['12m+7m','hybrid']:
+        data_mode_name = '12m+7m'
         path = path12m
-        filename = name+'_co21_'+data_mode+'+tp_mom1.fits'
-        if os.path.isfile(path+filename):
-            I_mom1 = fits.getdata(path+filename)
-    else:
+        filename_12mtp = name+'_co21_'+data_mode_name+'+tp_mom1.fits'  # (?) Will all the new maps have '+tp'?
+        best_mom1_12m = '12m+7m+tp'                                    # (?) ^
+        best_mom1 = best_mom1_12m
+        if os.path.isfile(path+filename_12mtp):
+            I_mom1_12m = fits.open(path+filename_12mtp,mode='update')
+        I_mom1 = I_mom1_12m[0].data
+    if data_mode=='hybrid':
+        # Fix both of their headers!
+        for kw in ['CTYPE3', 'CRVAL3', 'CDELT3', 'CRPIX3', 'CUNIT3']:
+            del I_mom1_12m[0].header[kw]
+            del I_mom1_7m[0].header[kw]
+        for i in ['1','2','3']:
+            for j in ['1', '2', '3']:
+                del I_mom1_7m[0].header['PC'+i+'_'+j]
+                del I_mom1_12m[0].header['PC0'+i+'_0'+j]
+        # Reproject the 7m map to the 12m's dimensions!
+        # Conveniently, the interpolation is also done for us.
+        I_mom1_7m_modify = Projection.from_hdu(I_mom1_7m)
+        I_mom1_7m = I_mom1_7m_modify.reproject(I_mom1_12m[0].header)
+        # Convert to simple np arrays!
+        I_mom1_12m, I_mom1_7m = I_mom1_12m[0].data, I_mom1_7m.value
+        # COMBINE!
+        I_mom1_mask = (np.isfinite(I_mom1_12m) + np.isfinite(I_mom1_7m)).astype('float')
+        I_mom1_mask[I_mom1_mask == 0.0] = np.nan    # np.nan where _neither_ I_mom1_12m nor I_mom1_7m have data.
+        I_mom1_hybrid = np.nan_to_num(I_mom1_12m) + np.isnan(I_mom1_12m)*np.nan_to_num(I_mom1_7m) + I_mom1_mask
+        I_mom1 = I_mom1_hybrid
+        best_mom1 = best_mom1_7m+' & '+best_mom1_12m
+    if data_mode not in ['7m','12m+7m','hybrid']:
         print('WARNING: Invalid data_mode-- No mom1 was found!')
         I_mom1 = None
         return I_mom1
@@ -178,7 +215,6 @@ def mom1_get(gal,data_mode='',return_best=False, verbose=True,\
     if I_mom1 is None:
         if verbose==True:
             print('WARNING: No mom1 was found!')
-        return None
     
     if return_best==True:
         return I_mom1, best_mom1
