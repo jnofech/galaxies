@@ -167,16 +167,17 @@ def mom1_get(gal,data_mode='',return_best=False, verbose=True,\
         filename_7m   = name+'_'+data_mode_name+   '_co21_mom1.fits'    # 7m mom1. Less reliable.
         if os.path.isfile(path+filename_7mtp):
             I_mom1_7m = fits.open(path+filename_7mtp,mode='update')
+            I_mom1 = I_mom1_7m[0].data
             best_mom1_7m='7m'      # Keeps track of whether 7m or 7m+tp is available. Returning this is optional.
         elif os.path.isfile(path+filename_7m):
             if verbose==True:
                 print('No 7m+tp mom1 found. Using 7m mom1 instead.')
-            best_mom1_7m='7m+tp'
             I_mom1_7m = fits.open(path+filename_7m,mode='update')
+            I_mom1 = I_mom1_7m[0].data
+            best_mom1_7m='7m+tp'
         else:
             best_mom1_7m = 'None'
         best_mom1 = best_mom1_7m
-        I_mom1 = I_mom1_7m[0].data
     if data_mode in ['12m+7m','hybrid']:
         data_mode_name = '12m+7m'
         path = path12m
@@ -185,7 +186,7 @@ def mom1_get(gal,data_mode='',return_best=False, verbose=True,\
         best_mom1 = best_mom1_12m
         if os.path.isfile(path+filename_12mtp):
             I_mom1_12m = fits.open(path+filename_12mtp,mode='update')
-        I_mom1 = I_mom1_12m[0].data
+            I_mom1 = I_mom1_12m[0].data
     if data_mode=='hybrid':
         # Fix both of their headers!
         for kw in ['CTYPE3', 'CRVAL3', 'CDELT3', 'CRPIX3', 'CUNIT3']:
@@ -261,6 +262,81 @@ def tpeak_get(gal,data_mode='',\
     if I_tpeak is None:
         print('WARNING: No tpeak was found!')
     return I_tpeak
+
+def peakvels_get(gal,data_mode='',cube=None,\
+             path7m ='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-LP/working_data/osu/',\
+             path12m='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-v1p0/'):
+    # Returns a map of averaged ABSOLUTE VALUE of noise values.
+    # This 'noisypercent' refers to the fraction of the 'v'-layers (0th axis in cube; around the 0th "sheet")
+    #     that are assumed to be noise.
+    if isinstance(gal,Galaxy):
+        name = gal.name.lower()
+    elif isinstance(gal,str):
+        name = gal.lower()
+    else:
+        raise ValueError("'gal' must be a str or galaxy!")
+    if data_mode == '7m':
+        data_mode = '7m'
+    elif data_mode in ['12m','12m+7m']:
+        data_mode = '12m+7m'  
+    elif data_mode=='':
+        print('No data_mode set. Defaulted to 12m+7m.')
+        data_mode = '12m+7m' 
+
+    # Get the cube, and spectral axis.
+    if cube is None:
+        cube = cube_get(gal,data_mode,path7m,path12m)
+    spec = cube.spectral_axis
+
+    # Find indices peaks from this.
+    data = cube.unmasked_data[:]
+    peak_indices = np.argmax(data,axis=0)   # Indices of temperature peaks in spectral axis.
+    
+    # Generate the 2D map of peak velocity!
+    peakvels = np.zeros(data[0].size).reshape(data.shape[1],data.shape[2]) * spec.unit
+    for j in range(0,cube.shape[1]):
+        for i in range(0,cube.shape[2]):
+            peakvels[j,i] = spec[peak_indices[j,i]]
+    peakvels[np.isnan(np.max(data,axis=0))] = np.nan  # Any pixel with >1 'np.nan' in its spectral axis is ignored.
+    peakvels = peakvels.to(u.km/u.s)
+    
+    return peakvels.value
+
+def noisemean_get(gal,data_mode='',cube=None,noisypercent=0.3,\
+             path7m ='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-LP/working_data/osu/',\
+             path12m='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-v1p0/'):
+    # Returns a map of averaged ABSOLUTE VALUE of noise values.
+    # This 'noisypercent' refers to the fraction of the 'v'-layers (0th axis in cube; around the 0th "sheet")
+    #     that are assumed to be noise.
+    if isinstance(gal,Galaxy):
+        name = gal.name.lower()
+    elif isinstance(gal,str):
+        name = gal.lower()
+    else:
+        raise ValueError("'gal' must be a str or galaxy!")
+    if data_mode == '7m':
+        data_mode = '7m'
+    elif data_mode in ['12m','12m+7m']:
+        data_mode = '12m+7m'  
+    elif data_mode=='':
+        print('No data_mode set. Defaulted to 12m+7m.')
+        data_mode = '12m+7m' 
+
+    # Get the cube.
+    if cube is None:
+        cube = cube_get(gal,data_mode,path7m,path12m)
+    
+    # Consider parts of the cube that are presumed to have no signal, only noise.
+    sheets = int(cube.shape[0] * noisypercent)    # Number of 2D "layers" that we're getting noise from.
+    index_low = int(0+sheets/2)
+    index_high = int(cube.shape[0]-sheets/2)
+
+    # Find the mean of abs(noise) through all these "sheets".
+    noise_low  = np.nanmean(np.abs(cube.unmasked_data[0:index_low].value),axis=0)    # Mean |noise|, 'below' signal.
+    noise_high = np.nanmean(np.abs(cube.unmasked_data[index_high:-1].value),axis=0)  # Mean |noise|, 'above' signal.
+    I_noise = np.nanmean([noise_low,noise_high],axis=0)
+    
+    return I_noise
 
 def hdr_get(gal,data_mode='',\
              path7m ='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-LP/working_data/osu/',\
