@@ -266,9 +266,6 @@ def tpeak_get(gal,data_mode='',\
 def peakvels_get(gal,data_mode='',cube=None,\
              path7m ='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-LP/working_data/osu/',\
              path12m='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-v1p0/'):
-    # Returns a map of averaged ABSOLUTE VALUE of noise values.
-    # This 'noisypercent' refers to the fraction of the 'v'-layers (0th axis in cube; around the 0th "sheet")
-    #     that are assumed to be noise.
     if isinstance(gal,Galaxy):
         name = gal.name.lower()
     elif isinstance(gal,str):
@@ -290,15 +287,94 @@ def peakvels_get(gal,data_mode='',cube=None,\
 
     # Find indices peaks from this.
     data = cube.unmasked_data[:]
-    peak_indices = np.argmax(data,axis=0)   # Indices of temperature peaks in spectral axis.
+    x0 = np.argmax(data,axis=0)     # Indices of temperature peaks in spectral axis.
     
-    # Generate the 2D map of peak velocity!
-    peakvels = np.zeros(data[0].size).reshape(data.shape[1],data.shape[2]) * spec.unit
-    for j in range(0,cube.shape[1]):
-        for i in range(0,cube.shape[2]):
-            peakvels[j,i] = spec[peak_indices[j,i]]
-    peakvels[np.isnan(np.max(data,axis=0))] = np.nan  # Any pixel with >1 'np.nan' in its spectral axis is ignored.
+    # Generate 2D map of peak velocity!
+    spec_interp = interpolate.interp1d(np.arange(spec.size),spec)  # Lets us do the whole map at once.
+    peakvels = spec_interp(x0)
+    # Adding units back
+    peakvels = peakvels*spec.unit
     peakvels = peakvels.to(u.km/u.s)
+    # Any pixel with >1 'np.nan' in its spectral axis is ignored.
+    peakvels[np.isnan(np.max(data,axis=0))] = np.nan  
+    
+    return peakvels.value
+
+def peakvels_quad_get(gal,data_mode='',cube=None,\
+             path7m ='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-LP/working_data/osu/',\
+             path12m='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-v1p0/'):
+    '''
+        Enables the quadratic fit for finding peak velocity.
+        This means the resulting "peak velocity" will be far
+        more reliable at low spectral resolutions, but comes
+        at the cost of slower run times.
+    '''
+    if isinstance(gal,Galaxy):
+        name = gal.name.lower()
+    elif isinstance(gal,str):
+        name = gal.lower()
+    else:
+        raise ValueError("'gal' must be a str or galaxy!")
+    if data_mode == '7m':
+        data_mode = '7m'
+    elif data_mode in ['12m','12m+7m']:
+        data_mode = '12m+7m'  
+    elif data_mode=='':
+        print('No data_mode set. Defaulted to 12m+7m.')
+        data_mode = '12m+7m' 
+
+    # Get the cube, and spectral axis.
+    if cube is None:
+        cube = cube_get(gal,data_mode,path7m,path12m)
+    spec = cube.spectral_axis
+
+    # Find indices peaks from this.
+    data = cube.unmasked_data[:].value
+    x0 = np.argmax(data,axis=0)     # Indices of temperature peaks in spectral axis.
+    
+    # Generate the 2D map of peak temp!
+    # Note: This I0 \equiv 'tpeak' is identical to np.max(data,axis=0).
+    I0 = np.zeros(data[0].size).reshape(data.shape[1],data.shape[2])   # Peak intensity, in K.
+    Ip = np.zeros(data[0].size).reshape(data.shape[1],data.shape[2])   # Intensity at (peak+1), in K.
+    Im = np.zeros(data[0].size).reshape(data.shape[1],data.shape[2])   # Intensity at (peak-1), in K.
+
+    # Peak indices, plus or minus 1. These are the points immediately around the peak index.
+    xp = x0+1
+    xm = x0-1
+    # If peak is at s='max' or s=0, then we can't really go higher or lower...
+    # ... but it's probably noise anyways, so we can return a bogus value.
+    xp[x0==(data.shape[0]-1)] = data.shape[0]-1
+    xm[x0==0] = 0
+    for j in range(0,data.shape[1]):
+        for i in range(0,data.shape[2]):
+    #         print('('+str(j)+','+str(i)+') :   spectral index = '+str(x0[j,i]))     
+            I0[j,i] = data[x0[j,i],j,i]
+            Ip[j,i] = data[xp[j,i],j,i]
+            Im[j,i] = data[xm[j,i],j,i]
+    # Adding units
+    I0 = I0*cube.unit
+    Ip = Ip*cube.unit
+    Im = Im*cube.unit
+    # Any pixel with >1 'np.nan' in its spectral axis is ignored.
+    I0[np.isnan(np.max(data,axis=0))] = np.nan  
+    Ip[np.isnan(np.max(data,axis=0))] = np.nan
+    Im[np.isnan(np.max(data,axis=0))] = np.nan
+    
+    # Find the 'TRUE' peak indices!
+    a0 = I0.value
+    a1 = 0.5*(Ip-Im).value
+    a2 = 0.5*(Ip+Im-2*I0).value
+    xmax = x0 - (a1/(2.*a2))   # TRUE indices of peak velocity! Except they're not integers anymore.
+
+    # Generate 2D map of peak velocity, using these 'true' peak indices!
+    spec_interp = interpolate.interp1d(np.arange(spec.size),spec, fill_value='extrapolate')  # Units disappear here.
+    peakvels = spec_interp(xmax)
+
+    # Adding units back
+    peakvels = peakvels*spec.unit
+    peakvels = peakvels.to(u.km/u.s)
+    # Any pixel with >1 'np.nan' in its spectral axis is ignored.
+    peakvels[np.isnan(np.max(data,axis=0))] = np.nan  
     
     return peakvels.value
 
