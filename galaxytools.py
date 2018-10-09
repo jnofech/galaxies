@@ -378,7 +378,7 @@ def peakvels_quad_get(gal,data_mode='',cube=None,\
     
     return peakvels.value
 
-def noisemean_get(gal,data_mode='',cube=None,noisypercent=0.3,\
+def noise_get(gal,data_mode='',cube=None,noisypercent=0.15,\
              path7m ='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-LP/working_data/osu/',\
              path12m='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-v1p0/'):
     # Returns a map of averaged ABSOLUTE VALUE of noise values.
@@ -401,16 +401,14 @@ def noisemean_get(gal,data_mode='',cube=None,noisypercent=0.3,\
     # Get the cube.
     if cube is None:
         cube = cube_get(gal,data_mode,path7m,path12m)
+    data = cube.unmasked_data[:]
     
     # Consider parts of the cube that are presumed to have no signal, only noise.
-    sheets = int(cube.shape[0] * noisypercent)    # Number of 2D "layers" that we're getting noise from.
-    index_low = int(0+sheets/2)
-    index_high = int(cube.shape[0]-sheets/2)
+    sheets = int(cube.shape[0] * noisypercent)           # Number of 2D "layers" that we're getting noise from.
+    data_slice = np.roll(data,int(sheets/2),axis=0)[:sheets]  # A slice of data containing only noise (ideally).
 
-    # Find the mean of abs(noise) through all these "sheets".
-    noise_low  = np.nanmean(np.abs(cube.unmasked_data[0:index_low].value),axis=0)    # Mean |noise|, 'below' signal.
-    noise_high = np.nanmean(np.abs(cube.unmasked_data[index_high:-1].value),axis=0)  # Mean |noise|, 'above' signal.
-    I_noise = np.nanmean([noise_low,noise_high],axis=0)
+    # Find the stdev of many noise "sheets".
+    I_noise = np.std(data_slice,axis=0)
     
     return I_noise
 
