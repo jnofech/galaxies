@@ -263,16 +263,51 @@ def tpeak_get(gal,data_mode='',\
         print('WARNING: No tpeak was found!')
     return I_tpeak
 
-def peakvels_get(gal,data_mode='',cube=None,quadfit=True,\
+def peakvels_get(gal,data_mode='',cube=None,mask=None,quadfit=True,write=False,\
              path7m ='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-LP/working_data/osu/',\
              path12m='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-v1p0/',\
-             savepath7m=''):
+             path7m_mask ='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-LP/working_data/for_inspection/',\
+             path12m_mask='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-v1p0/'):
     '''
-    quadfit=True : bool
-        Enables the quadratic fit for finding peak velocity.
-        This means the resulting "peak velocity" will be far
-        more reliable at low spectral resolutions, but comes
-        at the cost of slower run times.
+    Returns a 2D map of peak velocities.
+    Can use the quadratic-fit method described
+    in Teague & Foreman-Mackey 2018
+    (https://arxiv.org/abs/1809.10295), 
+    which improves accuracy for cubes of low
+    spectral resolution.
+    
+    Parameters:
+    -----------
+    gal : str OR Galaxy
+        Name of galaxy, OR Galaxy
+        object.
+    data_mode='12m' or '7m' : str
+        Chooses where to save the output
+        file, based on the selected data.
+    cube(=None) : SpectralCube
+        Spectral cube for the galaxy.
+    mask(=None) : SpectralCube OR Quantity 
+                  OR np.ndarray
+        3D boolean array of cube's resolution,
+        defining where the data is masked.
+    quadfit(=True) : bool
+        Enables the quadratic fit for finding 
+        peak velocity. This means the resulting
+        "peak velocity" will be far more 
+        reliable at low spectral resolutions, 
+        but comes at the cost of slower run 
+        times.
+    write(=False) : bool
+        Toggles whether to write the output
+        peakvels to a .fits file, in the
+        `path(7/12)m_mask/jnofech_peakvels` 
+        path.
+        
+    Returns:
+    --------
+    peakvels : np.ndarray
+        2D map of peak velocities, in
+        km/s.
     '''
     if isinstance(gal,Galaxy):
         name = gal.name.lower()
@@ -288,50 +323,58 @@ def peakvels_get(gal,data_mode='',cube=None,quadfit=True,\
         data_mode = 'hybrid'  
     elif data_mode=='':
         print('No data_mode set. Defaulted to 12m+7m.')
-        data_mode = '12m+7m' 
+        data_mode = '12m+7m'         
     
     if data_mode in ['7m', '12m+7m']:
         # Get the cube, and spectral axis.
         if cube is None:
             cube = cube_get(gal,data_mode,path7m,path12m)
         spec = cube.spectral_axis
-
-        # Find indices peaks from this.
-        data = cube.unmasked_data[:].value
-        x0 = np.argmax(data,axis=0)     # Indices of temperature peaks in spectral axis.
+        # Mask the data!
+        if mask is None:
+            print('WARNING: Mask not defined. Using unmasked data; will apply spatial mask later.')
+            mask_provided = False
+            mask = np.ones(cube.size).reshape(cube.shape)
+            mask = BooleanArrayMask(mask=(mask==True), wcs=cube.wcs)
+        elif (isinstance(mask,u.quantity.Quantity) or isinstance(mask,np.ndarray)):
+            mask_provided = True
+            mask = BooleanArrayMask(mask=(mask==True), wcs=cube.wcs)
+        elif isinstance(mask,SpectralCube):
+            mask_provided = True
+            mask = BooleanArrayMask(mask=(mask.unmasked_data[:]==True), wcs=cube.wcs)
+        else:
+            mask_provided = True #(?)
+            print('WARNING: Mask is not a Quantity, SpectralCube, or array. The code\'s probably about to crash.')    
+        cube_m = cube.with_mask(mask)
+        data = cube_m.filled_data[:].value
+        # Find peak indices from this.
+        data_copy = np.copy(data)
+        data_copy[np.isnan(data)] = -np.inf  # This prevents 'np.argmax()' from choking on the 'np.nan' values.
+        x0 = np.argmax(data_copy,axis=0)     # Indices of temperature peaks in spectral axis.
         if quadfit==True:    
-            # Generate the 2D map of peak temp!
-            # Note: This I0 \equiv 'tpeak' is identical to np.max(data,axis=0).
+            # Note: This I0 \equiv 'tpeak' will be identical to np.nanmax(data,axis=0).
             I0 = np.zeros(data[0].size).reshape(data.shape[1],data.shape[2])   # Peak intensity, in K.
-            Ip = np.zeros(data[0].size).reshape(data.shape[1],data.shape[2])   # Intensity at (peak+1), in K.
-            Im = np.zeros(data[0].size).reshape(data.shape[1],data.shape[2])   # Intensity at (peak-1), in K.
-            # Peak indices, plus or minus 1. These are the points immediately around the peak index.
+            Ip = np.zeros(data[0].size).reshape(data.shape[1],data.shape[2])   # Intensity at (x0+1), in K.
+            Im = np.zeros(data[0].size).reshape(data.shape[1],data.shape[2])   # Intensity at (x0-1), in K.
+            # Peak indices, plus or minus 1. These are the two points on a spectrum immediately around the peak.
             xp = x0+1
             xm = x0-1
-            # If peak is at s='max' or s=0, then we can't really go higher or lower...
-            # ... but it's probably noise anyways, so we can return a bogus value.
+            # If peak is at either end of the spectrum, then we can't really go higher or lower...
+            # ... but that's almost guaranteed to be noise anyways, so we can just use a bogus value.
             xp[x0==(data.shape[0]-1)] = data.shape[0]-1
             xm[x0==0] = 0
+            # Find the intensities, in K, at these indices!
             for j in range(0,data.shape[1]):
-                for i in range(0,data.shape[2]):
-            #         print('('+str(j)+','+str(i)+') :   spectral index = '+str(x0[j,i]))     
+                for i in range(0,data.shape[2]):   
                     I0[j,i] = data[x0[j,i],j,i]
                     Ip[j,i] = data[xp[j,i],j,i]
                     Im[j,i] = data[xm[j,i],j,i]
-            # Adding units
-            I0 = I0*cube.unit
-            Ip = Ip*cube.unit
-            Im = Im*cube.unit
-            # Any pixel with >1 'np.nan' in its spectral axis is ignored.
-            I0[np.isnan(np.max(data,axis=0))] = np.nan  
-            Ip[np.isnan(np.max(data,axis=0))] = np.nan
-            Im[np.isnan(np.max(data,axis=0))] = np.nan
-            # Find the 'TRUE' peak indices!
-            a0 = I0.value
-            a1 = 0.5*(Ip-Im).value
-            a2 = 0.5*(Ip+Im-2*I0).value
-            xmax = x0 - (a1/(2.*a2))   # TRUE indices of peak velocity! Except they're not integers anymore.
-            # Generate 2D map of peak velocity, using these 'true' peak indices!
+            # Find the quadratic-fitted peak indices!
+            a0 = I0
+            a1 = 0.5*(Ip-Im)
+            a2 = 0.5*(Ip+Im-2*I0)
+            xmax = x0 - (a1/(2.*a2))   # Quad-fitted indices of peak velocity! They're not integers anymore.
+            # Generate 2D map of peak velocity, using these improved peak indices!
             spec_interp = interpolate.interp1d(np.arange(spec.size),spec, fill_value='extrapolate')  # Units gone.
             peakvels = spec_interp(xmax)
         else:
@@ -350,9 +393,29 @@ def peakvels_get(gal,data_mode='',cube=None,quadfit=True,\
     # Adding units back
     peakvels = peakvels*spec.unit
     peakvels = peakvels.to(u.km/u.s)
-    # Any pixel with >1 'np.nan' in its spectral axis is ignored.
-    peakvels[np.isnan(np.max(data,axis=0))] = np.nan  
     
+    # Masking with spatial mask, if no mask was provided
+    if mask_provided==False:
+        I_mom1 = mom1_get(gal,data_mode,False,False,path7m,path12m)
+        peakvels[np.isnan(I_mom1)] = np.nan
+    
+    # Give it a header!
+    hdr = cube[0].header      # Take the header of a 2D slice from the cube.
+    hdr['BUNIT'] = 'km  s-1 ' # Write this instead of 'KM/S  '. The 'Projection.from_hdu' will accept these units!
+    
+    # Save header and data into a .fits file, if specified!
+    if write==True:
+        hdu      = fits.PrimaryHDU(peakvels.value,header=hdr)
+        filename = name+'_'+data_mode.lower()+'_co21_peakvels.fits'
+        if data_mode in ['7m']:
+            path=path7m_mask
+        elif data_mode in ['12m','12m+7m','hybrid','both']:
+            path=path12m_mask
+        if os.path.isfile(path+filename)==False:
+            hdu.writeto(path+filename)
+        else:
+            print('WARNING: Did not write to \''+path+filename+'\', as this file already exists.')    
+
     return peakvels.value
 
 def noise_get(gal,data_mode='',cube=None,noisypercent=0.15,\
