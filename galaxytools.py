@@ -608,7 +608,48 @@ def cube_get(gal,data_mode,\
     if cube is None:
         print('WARNING: No cube was found!')
     return cube
+    
+def mask_get(gal,data_mode,\
+             path7m ='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-LP/working_data/for_inspection/',\
+             path12m='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-v1p0/'):
+    if isinstance(gal,Galaxy):
+        name = gal.name.lower()
+    elif isinstance(gal,str):
+        name = gal.lower()
+    else:
+        raise ValueError("'gal' must be a str or galaxy!")
+    if data_mode == '7m':
+        data_mode = '7m'
+    elif data_mode in ['12m','12m+7m']:
+        data_mode = '12m+7m'
 
+    # Spectral Cube Mask
+    mask=None
+    if data_mode=='7m':
+        path = path7m
+        filename_7mtp = name+'_'+data_mode+'+tp_co21_mask.fits'    # 7m+tp mom0. Ideal.
+        filename_7m   = name+'_'+data_mode+   '_co21_mask.fits'    # 7m mom0. Less reliable.
+        if os.path.isfile(path+filename_7mtp):
+            mask = SpectralCube.read(path+filename_7mtp)
+        elif os.path.isfile(path+filename_7m):
+            print('No 7m+tp mask found. Using 7m mask instead.')
+            mask = SpectralCube.read(path+filename_7m)
+        else:
+            print('WARNING: \''+filename_7mtp+'\', \''+filename_7m+'\' not found!')
+    elif data_mode=='12m+7m':
+        path = path12m
+        filename = name+'_co21_'+data_mode+'+tp_mask.fits'
+        if os.path.isfile(path+filename):
+            mask = SpectralCube.read(path+filename)
+        else:
+            print('WARNING: \''+filename+'\' not found!')
+    else:
+        print('WARNING: Invalid data_mode-- No mask was found!')
+        
+    if mask is None:
+        print('WARNING: No mask was found!')
+    return mask
+   
 def band_get(gal,hdr=None,band='',res='15',sfr_toggle=False,path='/media/jnofech/BigData/PHANGS/Archive/galex_and_wise/'):
     '''
     Returns the 'band' map, used to
