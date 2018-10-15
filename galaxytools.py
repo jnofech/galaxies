@@ -869,7 +869,7 @@ def peakvels_gen(gal,data_mode='',cube=None,mask=None,quadfit=True,write=False,b
 
     return peakvels.value
     
-def PA_get(gal):
+def PA_get(gal): 
     '''
     Gets the kinematic PA for the
     indicated galaxy. Used when
