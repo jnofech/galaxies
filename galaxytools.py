@@ -168,13 +168,13 @@ def mom1_get(gal,data_mode='',return_best=False, verbose=True,\
         if os.path.isfile(path+filename_7mtp):
             I_mom1_7m = fits.open(path+filename_7mtp,mode='update')
             I_mom1 = I_mom1_7m[0].data
-            best_mom1_7m='7m'      # Keeps track of whether 7m or 7m+tp is available. Returning this is optional.
+            best_mom1_7m='7m+tp'      # Keeps track of whether 7m or 7m+tp is available. Returning this is optional.
         elif os.path.isfile(path+filename_7m):
             if verbose==True:
                 print('No 7m+tp mom1 found. Using 7m mom1 instead.')
             I_mom1_7m = fits.open(path+filename_7m,mode='update')
             I_mom1 = I_mom1_7m[0].data
-            best_mom1_7m='7m+tp'
+            best_mom1_7m='7m'
         else:
             best_mom1_7m = 'None'
         best_mom1 = best_mom1_7m
@@ -263,11 +263,454 @@ def tpeak_get(gal,data_mode='',\
         print('WARNING: No tpeak was found!')
     return I_tpeak
 
-def peakvels_get(gal,data_mode='',cube=None,mask=None,quadfit=True,write=False,\
+def noise_get(gal,data_mode='',cube=None,noisypercent=0.15,\
+             path7m ='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-LP/working_data/osu/',\
+             path12m='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-v1p0/'):
+    # Returns a map of averaged ABSOLUTE VALUE of noise values.
+    # This 'noisypercent' refers to the fraction of the 'v'-layers (0th axis in cube; around the 0th "sheet")
+    #     that are assumed to be noise.
+    if isinstance(gal,Galaxy):
+        name = gal.name.lower()
+    elif isinstance(gal,str):
+        name = gal.lower()
+    else:
+        raise ValueError("'gal' must be a str or galaxy!")
+    if data_mode == '7m':
+        data_mode = '7m'
+    elif data_mode in ['12m','12m+7m']:
+        data_mode = '12m+7m'
+    elif data_mode=='':
+        print('No data_mode set. Defaulted to 12m+7m.')
+        data_mode = '12m+7m' 
+
+    # Get the cube.
+    if cube is None:
+        cube = cube_get(gal,data_mode,path7m,path12m)
+    data = cube.unmasked_data[:]
+    
+    # Consider parts of the cube that are presumed to have no signal, only noise.
+    sheets = int(cube.shape[0] * noisypercent)           # Number of 2D "layers" that we're getting noise from.
+    data_slice = np.roll(data,int(sheets/2),axis=0)[:sheets]  # A slice of data containing only noise (ideally).
+
+    # Find the stdev of many noise "sheets".
+    I_noise = np.std(data_slice,axis=0).value
+    
+    return I_noise
+
+def hdr_get(gal,data_mode='',\
+             path7m ='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-LP/working_data/osu/',\
+             path12m='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-v1p0/'):
+    if isinstance(gal,Galaxy):
+        name = gal.name.lower()
+    elif isinstance(gal,str):
+        name = gal.lower()
+    else:
+        raise ValueError("'gal' must be a str or galaxy!")
+    if data_mode == '7m':
+        data_mode = '7m'
+    elif data_mode in ['12m','12m+7m']:
+        data_mode = '12m+7m'  
+    elif data_mode=='':
+        print('No data_mode set. Defaulted to 12m+7m.')
+        data_mode = '12m+7m'
+    
+    hdr = None
+    hdr_found = False
+    
+    # (?) Might be easier to just get the header from a cube slice...
+    
+    if data_mode=='7m':
+        path = path7m
+        for filename in [\
+        name+'_'+data_mode+   '_co21_mom0.fits',\
+        name+'_'+data_mode+   '_co21_mom1.fits',\
+        name+'_'+data_mode+   '_co21_tpeak.fits',\
+        name+'_'+data_mode+'+tp_co21_mom0.fits',\
+        name+'_'+data_mode+'+tp_co21_mom1.fits',\
+        name+'_'+data_mode+'+tp_co21_tpeak.fits']:
+            if os.path.isfile(path+filename):
+                hdr = fits.getheader(path+filename)
+                hdr_found = True
+    if data_mode=='12m+7m':
+        path = path12m
+        for filename in [\
+        name+'_co21_'+data_mode+'+tp_mom0.fits',\
+        name+'_co21_'+data_mode+'+tp_mom1.fits',\
+        name+'_co21_'+data_mode+'+tp_tpeak.fits']:
+            if os.path.isfile(path+filename):
+                hdr = fits.getheader(path+filename)
+                hdr_found = True
+    if hdr_found == False:
+        print('WARNING: No header was found!')
+        hdr = None
+    return hdr
+            
+def cube_get(gal,data_mode,return_best=False,\
+             path7m ='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-LP/working_data/osu/',\
+             path12m='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-v1p0/'):
+    if isinstance(gal,Galaxy):
+        name = gal.name.lower()
+    elif isinstance(gal,str):
+        name = gal.lower()
+    else:
+        raise ValueError("'gal' must be a str or galaxy!")
+    if data_mode == '7m':
+        data_mode = '7m'
+    elif data_mode in ['12m','12m+7m']:
+        data_mode = '12m+7m'
+
+    # Spectral Cube
+    cube=None
+    if data_mode=='7m':
+        path = path7m
+        filename_7mtp = name+'_'+data_mode+'+tp_co21_pbcorr_round_k.fits'    # 7m+tp cube. Ideal.
+        filename_7m   = name+'_'+data_mode+   '_co21_pbcorr_round_k.fits'    # 7m cube. Less reliable.
+        if os.path.isfile(path+filename_7mtp):
+            cube = SpectralCube.read(path+filename_7mtp)
+            best_cube = '7m+tp'
+        elif os.path.isfile(path+filename_7m):
+            print('No 7m+tp cube found. Using 7m cube instead.')
+            cube = SpectralCube.read(path+filename_7m)
+            best_cube = '7m'
+        else:
+            best_cube = 'None'
+    elif data_mode=='12m+7m':
+        path = path12m
+        filename = name+'_co21_'+data_mode+'+tp_pbcorr_round_k.fits'
+        if os.path.isfile(path+filename):
+            cube = SpectralCube.read(path+filename)
+            best_cube = '12m+7m+tp'
+        else:
+            best_cube = 'None'
+    else:
+        print('WARNING: Invalid data_mode-- No cube was found!')
+        cube = None
+        best_cube = 'None'
+    if cube is None:
+        print('WARNING: No cube was found!')
+        
+    if return_best==True:
+        return cube, best_cube
+    else:
+        return cube
+
+def mask_get(gal,data_mode,\
+             path7m ='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-LP/working_data/for_inspection/',\
+             path12m='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-v1p0/'):
+    if isinstance(gal,Galaxy):
+        name = gal.name.lower()
+    elif isinstance(gal,str):
+        name = gal.lower()
+    else:
+        raise ValueError("'gal' must be a str or galaxy!")
+    if data_mode == '7m':
+        data_mode = '7m'
+    elif data_mode in ['12m','12m+7m']:
+        data_mode = '12m+7m'
+
+    # Spectral Cube Mask
+    mask=None
+    if data_mode=='7m':
+        path = path7m
+        filename_7mtp = name+'_'+data_mode+'+tp_co21_mask.fits'    # 7m+tp mom0. Ideal.
+        filename_7m   = name+'_'+data_mode+   '_co21_mask.fits'    # 7m mom0. Less reliable.
+        if os.path.isfile(path+filename_7mtp):
+            mask = SpectralCube.read(path+filename_7mtp)
+        elif os.path.isfile(path+filename_7m):
+            print('No 7m+tp mask found. Using 7m mask instead.')
+            mask = SpectralCube.read(path+filename_7m)
+        else:
+            print('WARNING: \''+filename_7mtp+'\', \''+filename_7m+'\' not found!')
+    elif data_mode=='12m+7m':
+        path = path12m
+        filename = name+'_co21_'+data_mode+'+tp_mask.fits'
+        if os.path.isfile(path+filename):
+            mask = SpectralCube.read(path+filename)
+        else:
+            print('WARNING: \''+filename+'\' not found!')
+    else:
+        print('WARNING: Invalid data_mode-- No mask was found!')
+        
+    if mask is None:
+        print('WARNING: No mask was found!')
+    return mask
+
+def sfr_get(gal,hdr=None,conbeam=None,res='7p5',band_uv='nuv',band_ir='w3',autocorrect=False,\
+            path='/media/jnofech/BigData/PHANGS/Archive/galex_and_wise/'):
+    '''
+    Recommended: NUV band + WISE Band 3.
+    
+    The 'res' can be '7p5' or '15',
+        i.e. 7.5" SFR data or 15" data.
+    The band_uv can be 'fuv', 'nuv', or None.
+    The band_ir can be 'w3' or 'w4', or None.
+        For 7.5" (i.e. best) data, 'nuv'+'w3'
+        are recommended.
+    The 7.5" is better, but keep in mind
+        that some cubes have beam widths
+        too high to be convolved to such
+        a high resolution. For these cases,
+        stick with the 15" SFR maps.
+    autocorrect=False : bool
+        Toggles whether to revert to 15"
+        data if 7.5" is missing.
+        Recommended to DISABLE if you need
+        cubes to be convolved to same res.
+        as SFR maps.
+    '''
+    if isinstance(gal,Galaxy):
+        name = gal.name.lower()
+    elif isinstance(gal,str):
+        name = gal.lower()
+    else:
+        raise ValueError("'gal' must be a str or galaxy!")
+        
+    # Convert the UV and IR maps to Msun/yr/kpc**2!
+    if band_uv!=None:
+        if band_uv.lower() in ['fuv','nuv']:
+            uv_to_sfr = 1.04e-1
+        else:
+            raise ValueError('(galaxytools.sfr_get())  Invalid \'band_uv\'. Must be \'fuv\' or \'nuv\'!')
+    if band_ir!=None:
+        if band_ir.lower()=='w3':
+            ir_to_sfr = 3.77e-3
+        elif band_ir.lower()=='w4':
+            ir_to_sfr = 3.24e-3
+        else:
+            raise ValueError('(galaxytools.sfr_get())  Invalid \'band_ir\'. Must be \'w3\' or \'w4\'!')
+    
+    # Get the map for each band!
+    map_uv      = band_get(gal,hdr,band_uv,res,sfr_toggle=False)    # Galex NUV band.
+    map_ir      = band_get(gal,hdr,band_ir,res,sfr_toggle=False)     # WISE3 band.
+    
+    # Actually generate the SFR map!
+    if map_uv is not None and map_ir is not None:
+        sfr     = (map_uv*uv_to_sfr + map_ir*ir_to_sfr).value   # Sum of SFR contributions, in Msun/yr/kpc**2.
+    elif map_uv is None and band_uv==None and map_ir is not None and band_ir!=None:
+        # If UV is intentionally missing:
+#         print('(galaxytools.sfr_get())  WARNING: Only considering IR ('+band_ir+') component.')
+        sfr     = (map_ir*ir_to_sfr).value             # SFR from just IR contribution.
+    elif map_ir is None and band_ir==None and map_uv is not None and band_uv!=None:
+        # If IR is intentionally missing:
+#         print('(galaxytools.sfr_get())  WARNING: Only considering UV ('+band_uv+') component.')
+        sfr     = (map_uv*uv_to_sfr).value             # SFR from just UV contribution.
+    else:
+        print('(galaxytools.sfr_get())  WARNING: No '+str(res)+'" '+str(band_uv)\
+              +'+'+str(band_ir)+' SFR map was found!')
+        sfr = None
+    
+    # Autocorrect with 15" version?
+    if sfr is None and res=='7p5' and autocorrect==True:
+        print('(galaxytools.sfr_get())  WARNING: Unable to get 7.5" SFR map! Reverting to 15" instead.')
+        sfr = sfr_get(gal,hdr,conbeam,band_uv,band_ir,'15',False,path)
+        return sfr
+
+    if sfr is not None and conbeam!=None:
+        sfr = convolve_2D(gal,hdr,sfr,conbeam)  # Convolved SFR map.
+    return sfr
+
+def band_get(gal,hdr=None,band='',res='15',sfr_toggle=False,path='/media/jnofech/BigData/PHANGS/Archive/galex_and_wise/'):
+    '''
+    Returns the 'band' map, used to
+    generate SFR map.
+    
+    Parameters:
+    -----------
+    gal : Galaxy or str
+        Galaxy.
+    hdr : fits.header.Header
+        Header for the galaxy.
+    band : str
+        FUV = Galex FUV band (???-??? nm)
+        NUV = Galex NUV band (150-220 nm)
+        W3 = WISE Band 3 (12 µm data)
+        W4 = WISE Band 4 (22 µm data)
+    res='7p5' : str
+        Resolution, in arcsecs.
+        '7p5' - 7.5" resolution.
+        '15'  - 15" resolution.
+    sfr_toggle=False : bool
+        Toggles whether to read the
+        SFR contribution (Msun/yr/kpc^2)
+        directly. Disabled by default
+        since these files aren't always
+        included.
+    '''
+    if isinstance(gal,Galaxy):
+        name = gal.name.lower()
+    elif isinstance(gal,str):
+        name = gal.lower()
+    else:
+        raise ValueError("'gal' must be a str or galaxy!")
+
+    if band is None:
+#         print('(galaxytools.band_get()) WARNING: No band selected! Returning None.')
+        return None
+    
+    filename = path+name+'_'+(sfr_toggle*'sfr_')+band+'_gauss'+res+'.fits'
+    if os.path.isfile(filename):
+        map2d = Projection.from_hdu(fits.open(filename))        # Not necessarily in Msun/yr/kpc**2. Careful!
+#         print(filename)
+    else:
+        print('(galaxytools.band_get()) WARNING: No map was found, for '+(sfr_toggle*'sfr_')+band+'_gauss'+res+'.fits')
+        map2d = None
+        return map2d
+    
+    if hdr!=None:
+        map2d_final = map2d.reproject(hdr)
+    else:
+        map2d_final = map2d
+    return map2d_final
+
+def peakvels_get(gal,data_mode='',cube=None,mask=None,quadfit=True,write=True,best_cube=None,\
              path7m ='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-LP/working_data/osu/',\
              path12m='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-v1p0/',\
              path7m_mask ='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-LP/working_data/for_inspection/',\
-             path12m_mask='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-v1p0/'):
+             path12m_mask='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-v1p0/',\
+             folder_vpeak='jnofech_peakvels/'):
+    '''
+    Returns a 2D map of peak velocities.
+    Can use the quadratic-fit method described
+    in Teague & Foreman-Mackey 2018
+    (https://arxiv.org/abs/1809.10295), 
+    which improves accuracy for cubes of low
+    spectral resolution.
+    
+    Parameters:
+    -----------
+    gal : str OR Galaxy
+        Name of galaxy, OR Galaxy
+        object.
+    data_mode='12m' or '7m' : str
+        Chooses where to find the output
+        file, based on the selected data.
+    cube(=None) : SpectralCube
+        Spectral cube for the galaxy.
+    mask(=None) : SpectralCube OR Quantity 
+                  OR np.ndarray
+        3D boolean array of cube's resolution,
+        defining where the data is masked.
+    quadfit(=True) : bool
+        Enables the quadratic fit for finding 
+        peak velocity. This means the resulting
+        "peak velocity" will be far more 
+        reliable at low spectral resolutions, 
+        but comes at the cost of slower run 
+        times.
+    write(=True) : bool
+        If no peakvels map is found, this
+        toggles whether to write the output
+        peakvels to a .fits file, in the
+        `path(7/12)m_mask/jnofech_peakvels` 
+        path.
+    best_cube(=None) : str
+        Best image quality-- e.g. '7m', 
+        '7m+12m', etc., for the data cube.
+        Only necessary when write=True.
+        
+    Returns:
+    --------
+    peakvels : np.ndarray
+        2D map of peak velocities, in
+        km/s.
+    '''
+    if isinstance(gal,Galaxy):
+        name = gal.name.lower()
+    elif isinstance(gal,str):
+        name = gal.lower()
+    else:
+        raise ValueError("'gal' must be a str or galaxy!")
+    if data_mode == '7m':
+        data_mode = '7m'
+    elif data_mode in ['12m','12m+7m']:
+        data_mode = '12m+7m'  
+    elif data_mode.lower() in ['both','hybrid']:
+        data_mode = 'hybrid'  
+    elif data_mode=='':
+        if verbose==True:
+            print('No data_mode set. Defaulted to 12m+7m.')
+        data_mode = '12m+7m'
+    
+    # Get filename.
+    if best_cube is None:
+        cube_discard, best_cube = cube_get(gal,data_mode,return_best=True)
+    if best_cube is None:
+        raise ValueError('Best data mode not specified! This is needed to find the peakvels .fits file.')
+    else:
+        filename = name+'_'+best_cube+'_co21_peakvels.fits' 
+
+    # Read from file, if possible!
+    peakvels     = None
+    peakvels_7m  = None
+    peakvels_12m = None
+    if data_mode in ['7m','hybrid']:
+        path=path7m_mask+folder_vpeak
+        if os.path.isfile(path+filename)==True:
+            peakvels_7m = fits.open(path+filename)
+            peakvels    = peakvels_7m[0].data
+        else:
+            if write==True:
+                print('\''+filename+'\' does not exist. Generating and saving new peakvels map!')
+            else:
+                print('\''+filename+'\' does not exist. Generating new peakvels map!')
+            # Define cube and mask!
+            cube = cube_get(gal,data_mode,path7m=path7m,path12m=path12m)
+            mask = mask_get(gal,data_mode,path7m=path7m_mask,path12m=path12m_mask)
+            if (mask is not None) and (mask.size!=cube.size):
+                print('WARNING: Mask has different dimensions from cube!')
+                mask = None
+            peakvels = peakvels_gen(gal,data_mode,cube,mask,quadfit,write,best_cube)
+            peakvels_7m = fits.open(path+filename)   # A new file was just created!
+    if data_mode in ['12m','12m+7m','hybrid']:
+        path=path12m_mask+folder_vpeak
+        if os.path.isfile(path+filename)==True:
+            peakvels_12m = fits.open(path+filename)
+            peakvels     = peakvels_12m[0].data
+        else:
+            if write==True:
+                print('\''+filename+'\' does not exist. Generating and saving new peakvels map!')
+            else:
+                print('\''+filename+'\' does not exist. Generating new peakvels map!')
+            # Define cube and mask!
+            cube = cube_get(gal,data_mode,path7m=path7m,path12m=path12m)
+            mask = mask_get(gal,data_mode,path7m=path7m,path12m=path12m)
+            if mask.size!=cube.size:
+                print('WARNING: Mask has different dimensions from cube!')
+                mask = None
+            peakvels = peakvels_gen(gal,data_mode,cube,mask,quadfit,write,best_cube)
+            peakvels_12m = fits.open(path+filename)   # A new file was just created!
+        
+    # Combining the two, if hybrid mode is enabled!
+    if data_mode in ['hybrid']:
+        # Reproject the 7m map to the 12m's dimensions!
+        # Conveniently, the interpolation is also done for us.
+        peakvels_7m_modify = Projection.from_hdu(peakvels_7m)
+        peakvels_7m = peakvels_7m_modify.reproject(peakvels_12m[0].header)
+        # Convert to simple np arrays!
+        peakvels_12m, peakvels_7m = peakvels_12m[0].data, peakvels_7m.value
+        # COMBINE!
+        peakvels_mask = (np.isfinite(peakvels_12m) + np.isfinite(peakvels_7m)).astype('float')
+        peakvels_mask[peakvels_mask == 0.0] = np.nan    # np.nan where _neither_ 12m nor 7m have data.
+        peakvels_hybrid = np.nan_to_num(peakvels_12m) + np.isnan(peakvels_12m)*np.nan_to_num(peakvels_7m) \
+                                                      + peakvels_mask
+        peakvels = peakvels_hybrid
+    if data_mode not in ['7m','12m+7m','hybrid']:
+        print('WARNING: Invalid data_mode-- No mom1 was found!')
+        peakvels = None
+        return peakvels
+
+    if peakvels is None:
+        if verbose==True:
+            print('WARNING: No peakvels was found!')
+
+    return peakvels
+
+def peakvels_gen(gal,data_mode='',cube=None,mask=None,quadfit=True,write=False,best_cube=None,\
+             path7m ='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-LP/working_data/osu/',\
+             path12m='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-v1p0/',\
+             path7m_mask ='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-LP/working_data/for_inspection/',\
+             path12m_mask='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-v1p0/',\
+             folder_vpeak='jnofech_peakvels/'):
     '''
     Returns a 2D map of peak velocities.
     Can use the quadratic-fit method described
@@ -302,6 +745,10 @@ def peakvels_get(gal,data_mode='',cube=None,mask=None,quadfit=True,write=False,\
         peakvels to a .fits file, in the
         `path(7/12)m_mask/jnofech_peakvels` 
         path.
+    best_cube(=None) : str
+        Best image quality-- e.g. '7m', 
+        '7m+12m', etc., for the data cube.
+        Only necessary when write=True.
         
     Returns:
     --------
@@ -323,8 +770,8 @@ def peakvels_get(gal,data_mode='',cube=None,mask=None,quadfit=True,write=False,\
         data_mode = 'hybrid'  
     elif data_mode=='':
         print('No data_mode set. Defaulted to 12m+7m.')
-        data_mode = '12m+7m'         
-    
+        data_mode = '12m+7m'
+
     if data_mode in ['7m', '12m+7m']:
         # Get the cube, and spectral axis.
         if cube is None:
@@ -406,302 +853,21 @@ def peakvels_get(gal,data_mode='',cube=None,mask=None,quadfit=True,write=False,\
     # Save header and data into a .fits file, if specified!
     if write==True:
         hdu      = fits.PrimaryHDU(peakvels.value,header=hdr)
-        filename = name+'_'+data_mode.lower()+'_co21_peakvels.fits'
+        if best_cube is None:
+            print('WARNING: Best data mode not specified! Will assume "'+data_mode.lower()+'".')
+            filename = name+'_'+data_mode.lower()+'_co21_peakvels.fits'
+        else:
+            filename = name+'_'+best_cube+'_co21_peakvels.fits'
         if data_mode in ['7m']:
-            path=path7m_mask
+            path=path7m_mask+folder_vpeak
         elif data_mode in ['12m','12m+7m','hybrid','both']:
-            path=path12m_mask
+            path=path12m_mask+folder_vpeak
         if os.path.isfile(path+filename)==False:
             hdu.writeto(path+filename)
         else:
             print('WARNING: Did not write to \''+path+filename+'\', as this file already exists.')    
 
     return peakvels.value
-
-def noise_get(gal,data_mode='',cube=None,noisypercent=0.15,\
-             path7m ='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-LP/working_data/osu/',\
-             path12m='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-v1p0/'):
-    # Returns a map of averaged ABSOLUTE VALUE of noise values.
-    # This 'noisypercent' refers to the fraction of the 'v'-layers (0th axis in cube; around the 0th "sheet")
-    #     that are assumed to be noise.
-    if isinstance(gal,Galaxy):
-        name = gal.name.lower()
-    elif isinstance(gal,str):
-        name = gal.lower()
-    else:
-        raise ValueError("'gal' must be a str or galaxy!")
-    if data_mode == '7m':
-        data_mode = '7m'
-    elif data_mode in ['12m','12m+7m']:
-        data_mode = '12m+7m'  
-    elif data_mode=='':
-        print('No data_mode set. Defaulted to 12m+7m.')
-        data_mode = '12m+7m' 
-
-    # Get the cube.
-    if cube is None:
-        cube = cube_get(gal,data_mode,path7m,path12m)
-    data = cube.unmasked_data[:]
-    
-    # Consider parts of the cube that are presumed to have no signal, only noise.
-    sheets = int(cube.shape[0] * noisypercent)           # Number of 2D "layers" that we're getting noise from.
-    data_slice = np.roll(data,int(sheets/2),axis=0)[:sheets]  # A slice of data containing only noise (ideally).
-
-    # Find the stdev of many noise "sheets".
-    I_noise = np.std(data_slice,axis=0).value
-    
-    return I_noise
-
-def hdr_get(gal,data_mode='',\
-             path7m ='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-LP/working_data/osu/',\
-             path12m='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-v1p0/'):
-    if isinstance(gal,Galaxy):
-        name = gal.name.lower()
-    elif isinstance(gal,str):
-        name = gal.lower()
-    else:
-        raise ValueError("'gal' must be a str or galaxy!")
-    if data_mode == '7m':
-        data_mode = '7m'
-    elif data_mode in ['12m','12m+7m']:
-        data_mode = '12m+7m'  
-    elif data_mode=='':
-        print('No data_mode set. Defaulted to 12m+7m.')
-        data_mode = '12m+7m'
-    
-    hdr = None
-    hdr_found = False
-    
-    if data_mode=='7m':
-        path = path7m
-        for filename in [\
-        name+'_'+data_mode+   '_co21_mom0.fits',\
-        name+'_'+data_mode+   '_co21_mom1.fits',\
-        name+'_'+data_mode+   '_co21_tpeak.fits',\
-        name+'_'+data_mode+'+tp_co21_mom0.fits',\
-        name+'_'+data_mode+'+tp_co21_mom1.fits',\
-        name+'_'+data_mode+'+tp_co21_tpeak.fits']:
-            if os.path.isfile(path+filename):
-                hdr = fits.getheader(path+filename)
-                hdr_found = True
-    if data_mode=='12m+7m':
-        path = path12m
-        for filename in [\
-        name+'_co21_'+data_mode+'+tp_mom0.fits',\
-        name+'_co21_'+data_mode+'+tp_mom1.fits',\
-        name+'_co21_'+data_mode+'+tp_tpeak.fits']:
-            if os.path.isfile(path+filename):
-                hdr = fits.getheader(path+filename)
-                hdr_found = True
-    if hdr_found == False:
-        print('WARNING: No header was found!')
-        hdr = None
-    return hdr
-
-def sfr_get(gal,hdr=None,conbeam=None,res='7p5',band_uv='nuv',band_ir='w3',autocorrect=False,\
-            path='/media/jnofech/BigData/PHANGS/Archive/galex_and_wise/'):
-    '''
-    Recommended: NUV band + WISE Band 3.
-    
-    The 'res' can be '7p5' or '15',
-        i.e. 7.5" SFR data or 15" data.
-    The band_uv can be 'fuv', 'nuv', or None.
-    The band_ir can be 'w3' or 'w4', or None.
-        For 7.5" (i.e. best) data, 'nuv'+'w3'
-        are recommended.
-    The 7.5" is better, but keep in mind
-        that some cubes have beam widths
-        too high to be convolved to such
-        a high resolution. For these cases,
-        stick with the 15" SFR maps.
-    autocorrect=False : bool
-        Toggles whether to revert to 15"
-        data if 7.5" is missing.
-        Recommended to DISABLE if you need
-        cubes to be convolved to same res.
-        as SFR maps.
-    '''
-    if isinstance(gal,Galaxy):
-        name = gal.name.lower()
-    elif isinstance(gal,str):
-        name = gal.lower()
-    else:
-        raise ValueError("'gal' must be a str or galaxy!")
-        
-    # Convert the UV and IR maps to Msun/yr/kpc**2!
-    if band_uv!=None:
-        if band_uv.lower() in ['fuv','nuv']:
-            uv_to_sfr = 1.04e-1
-        else:
-            raise ValueError('(galaxytools.sfr_get())  Invalid \'band_uv\'. Must be \'fuv\' or \'nuv\'!')
-    if band_ir!=None:
-        if band_ir.lower()=='w3':
-            ir_to_sfr = 3.77e-3
-        elif band_ir.lower()=='w4':
-            ir_to_sfr = 3.24e-3
-        else:
-            raise ValueError('(galaxytools.sfr_get())  Invalid \'band_ir\'. Must be \'w3\' or \'w4\'!')
-    
-    # Get the map for each band!
-    map_uv      = band_get(gal,hdr,band_uv,res,sfr_toggle=False)    # Galex NUV band.
-    map_ir      = band_get(gal,hdr,band_ir,res,sfr_toggle=False)     # WISE3 band.
-    
-    # Actually generate the SFR map!
-    if map_uv is not None and map_ir is not None:
-        sfr     = (map_uv*uv_to_sfr + map_ir*ir_to_sfr).value   # Sum of SFR contributions, in Msun/yr/kpc**2.
-    elif map_uv is None and band_uv==None and map_ir is not None and band_ir!=None:
-        # If UV is intentionally missing:
-#         print('(galaxytools.sfr_get())  WARNING: Only considering IR ('+band_ir+') component.')
-        sfr     = (map_ir*ir_to_sfr).value             # SFR from just IR contribution.
-    elif map_ir is None and band_ir==None and map_uv is not None and band_uv!=None:
-        # If IR is intentionally missing:
-#         print('(galaxytools.sfr_get())  WARNING: Only considering UV ('+band_uv+') component.')
-        sfr     = (map_uv*uv_to_sfr).value             # SFR from just UV contribution.
-    else:
-        print('(galaxytools.sfr_get())  WARNING: No '+str(res)+'" '+str(band_uv)\
-              +'+'+str(band_ir)+' SFR map was found!')
-        sfr = None
-    
-    # Autocorrect with 15" version?
-    if sfr is None and res=='7p5' and autocorrect==True:
-        print('(galaxytools.sfr_get())  WARNING: Unable to get 7.5" SFR map! Reverting to 15" instead.')
-        sfr = sfr_get(gal,hdr,conbeam,band_uv,band_ir,'15',False,path)
-        return sfr
-
-    if sfr is not None and conbeam!=None:
-        sfr = convolve_2D(gal,hdr,sfr,conbeam)  # Convolved SFR map.
-    return sfr
-            
-def cube_get(gal,data_mode,\
-             path7m ='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-LP/working_data/osu/',\
-             path12m='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-v1p0/'):
-    if isinstance(gal,Galaxy):
-        name = gal.name.lower()
-    elif isinstance(gal,str):
-        name = gal.lower()
-    else:
-        raise ValueError("'gal' must be a str or galaxy!")
-    if data_mode == '7m':
-        data_mode = '7m'
-    elif data_mode in ['12m','12m+7m']:
-        data_mode = '12m+7m'
-
-    # Spectral Cube
-    cube=None
-    if data_mode=='7m':
-        path = path7m
-        filename_7mtp = name+'_'+data_mode+'+tp_co21_pbcorr_round_k.fits'    # 7m+tp cube. Ideal.
-        filename_7m   = name+'_'+data_mode+   '_co21_pbcorr_round_k.fits'    # 7m cube. Less reliable.
-        if os.path.isfile(path+filename_7mtp):
-            cube = SpectralCube.read(path+filename_7mtp)
-        elif os.path.isfile(path+filename_7m):
-            print('No 7m+tp cube found. Using 7m cube instead.')
-            cube = SpectralCube.read(path+filename_7m)
-    elif data_mode=='12m+7m':
-        path = path12m
-        filename = name+'_co21_'+data_mode+'+tp_pbcorr_round_k.fits'
-        if os.path.isfile(path+filename):
-            cube = SpectralCube.read(path+filename)
-    else:
-        print('WARNING: Invalid data_mode-- No cube was found!')
-        cube = None
-    if cube is None:
-        print('WARNING: No cube was found!')
-    return cube
-    
-def mask_get(gal,data_mode,\
-             path7m ='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-LP/working_data/for_inspection/',\
-             path12m='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-v1p0/'):
-    if isinstance(gal,Galaxy):
-        name = gal.name.lower()
-    elif isinstance(gal,str):
-        name = gal.lower()
-    else:
-        raise ValueError("'gal' must be a str or galaxy!")
-    if data_mode == '7m':
-        data_mode = '7m'
-    elif data_mode in ['12m','12m+7m']:
-        data_mode = '12m+7m'
-
-    # Spectral Cube Mask
-    mask=None
-    if data_mode=='7m':
-        path = path7m
-        filename_7mtp = name+'_'+data_mode+'+tp_co21_mask.fits'    # 7m+tp mom0. Ideal.
-        filename_7m   = name+'_'+data_mode+   '_co21_mask.fits'    # 7m mom0. Less reliable.
-        if os.path.isfile(path+filename_7mtp):
-            mask = SpectralCube.read(path+filename_7mtp)
-        elif os.path.isfile(path+filename_7m):
-            print('No 7m+tp mask found. Using 7m mask instead.')
-            mask = SpectralCube.read(path+filename_7m)
-        else:
-            print('WARNING: \''+filename_7mtp+'\', \''+filename_7m+'\' not found!')
-    elif data_mode=='12m+7m':
-        path = path12m
-        filename = name+'_co21_'+data_mode+'+tp_mask.fits'
-        if os.path.isfile(path+filename):
-            mask = SpectralCube.read(path+filename)
-        else:
-            print('WARNING: \''+filename+'\' not found!')
-    else:
-        print('WARNING: Invalid data_mode-- No mask was found!')
-        
-    if mask is None:
-        print('WARNING: No mask was found!')
-    return mask
-   
-def band_get(gal,hdr=None,band='',res='15',sfr_toggle=False,path='/media/jnofech/BigData/PHANGS/Archive/galex_and_wise/'):
-    '''
-    Returns the 'band' map, used to
-    generate SFR map.
-    
-    Parameters:
-    -----------
-    gal : Galaxy or str
-        Galaxy.
-    hdr : fits.header.Header
-        Header for the galaxy.
-    band : str
-        FUV = Galex FUV band (???-??? nm)
-        NUV = Galex NUV band (150-220 nm)
-        W3 = WISE Band 3 (12 µm data)
-        W4 = WISE Band 4 (22 µm data)
-    res='7p5' : str
-        Resolution, in arcsecs.
-        '7p5' - 7.5" resolution.
-        '15'  - 15" resolution.
-    sfr_toggle=False : bool
-        Toggles whether to read the
-        SFR contribution (Msun/yr/kpc^2)
-        directly. Disabled by default
-        since these files aren't always
-        included.
-    '''
-    if isinstance(gal,Galaxy):
-        name = gal.name.lower()
-    elif isinstance(gal,str):
-        name = gal.lower()
-    else:
-        raise ValueError("'gal' must be a str or galaxy!")
-
-    if band is None:
-#         print('(galaxytools.band_get()) WARNING: No band selected! Returning None.')
-        return None
-    
-    filename = path+name+'_'+(sfr_toggle*'sfr_')+band+'_gauss'+res+'.fits'
-    if os.path.isfile(filename):
-        map2d = Projection.from_hdu(fits.open(filename))        # Not necessarily in Msun/yr/kpc**2. Careful!
-#         print(filename)
-    else:
-        print('(galaxytools.band_get()) WARNING: No map was found, for '+(sfr_toggle*'sfr_')+band+'_gauss'+res+'.fits')
-        map2d = None
-        return map2d
-    
-    if hdr!=None:
-        map2d_final = map2d.reproject(hdr)
-    else:
-        map2d_final = map2d
-    return map2d_final
     
 def PA_get(gal):
     '''
