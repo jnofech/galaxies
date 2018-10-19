@@ -135,9 +135,10 @@ def mom0_get(gal,data_mode='',\
 
 def mom1_get(gal,data_mode='',return_best=False, verbose=True,\
              path7m ='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-LP/working_data/osu/',\
-             path12m='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-v1p0/'):
+             path12m='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-v1p0/',\
+             folder_hybrid='jnofech_mom1_hybrid/'):
     '''
-    data_mode = '7m','12m','12m+7m'
+    data_mode = '7m','12m','12m+7m'.
     '''
     if isinstance(gal,Galaxy):
         name = gal.name.lower()
@@ -187,6 +188,8 @@ def mom1_get(gal,data_mode='',return_best=False, verbose=True,\
         if os.path.isfile(path+filename_12mtp):
             I_mom1_12m = fits.open(path+filename_12mtp,mode='update')
             I_mom1 = I_mom1_12m[0].data
+        else:
+            print('WARNING: "'+path+filename_12mtp+'" not found!')
     if data_mode=='hybrid':
         # Fix both of their headers!
         for kw in ['CTYPE3', 'CRVAL3', 'CDELT3', 'CRPIX3', 'CUNIT3']:
@@ -196,6 +199,7 @@ def mom1_get(gal,data_mode='',return_best=False, verbose=True,\
             for j in ['1', '2', '3']:
                 del I_mom1_7m[0].header['PC'+i+'_'+j]
                 del I_mom1_12m[0].header['PC0'+i+'_0'+j]
+        hdr = I_mom1_12m[0].header
         # Reproject the 7m map to the 12m's dimensions!
         # Conveniently, the interpolation is also done for us.
         I_mom1_7m_modify = Projection.from_hdu(I_mom1_7m)
@@ -207,7 +211,19 @@ def mom1_get(gal,data_mode='',return_best=False, verbose=True,\
         I_mom1_mask[I_mom1_mask == 0.0] = np.nan    # np.nan where _neither_ I_mom1_12m nor I_mom1_7m have data.
         I_mom1_hybrid = np.nan_to_num(I_mom1_12m) + np.isnan(I_mom1_12m)*np.nan_to_num(I_mom1_7m) + I_mom1_mask
         I_mom1 = I_mom1_hybrid
-        best_mom1 = best_mom1_7m+' & '+best_mom1_12m
+        best_mom1 = 'hybrid_'+best_mom1_7m+'&'+best_mom1_12m
+        
+        # SAVE!
+        hdr['BUNIT'] = 'km  s-1 '  # Write this instead of 'KM/S  '.
+        # Save header and data into a .fits file, if specified!
+        hdu      = fits.PrimaryHDU(I_mom1_hybrid,header=hdr)
+        filename = name+'_co21_'+best_mom1+'_mom1.fits'
+        path = path12m+folder_hybrid
+        if os.path.isfile(path+filename)==False:
+            print(path+filename)
+            hdu.writeto(path+filename)
+        else:
+            print('WARNING: Did not write to \''+path+filename+'\', as this file already exists.') 
     if data_mode not in ['7m','12m+7m','hybrid']:
         print('WARNING: Invalid data_mode-- No mom1 was found!')
         I_mom1 = None
@@ -395,7 +411,7 @@ def cube_get(gal,data_mode,return_best=False,\
         return cube
 
 def mask_get(gal,data_mode,\
-             path7m ='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-LP/working_data/for_inspection/',\
+             path7m ='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-LP/working_data/osu/eros_masks/',\
              path12m='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-v1p0/'):
     if isinstance(gal,Galaxy):
         name = gal.name.lower()
@@ -412,8 +428,8 @@ def mask_get(gal,data_mode,\
     mask=None
     if data_mode=='7m':
         path = path7m
-        filename_7mtp = name+'_'+data_mode+'+tp_co21_mask.fits'    # 7m+tp mom0. Ideal.
-        filename_7m   = name+'_'+data_mode+   '_co21_mask.fits'    # 7m mom0. Less reliable.
+        filename_7mtp = name+'_'+data_mode+'+tp_co21_pbcorr_round_k_mask.fits'    # 7m+tp mask. Ideal.
+        filename_7m   = name+'_'+data_mode+   '_co21_pbcorr_round_k_mask.fits'    # 7m mask. Less reliable.
         if os.path.isfile(path+filename_7mtp):
             mask = SpectralCube.read(path+filename_7mtp)
         elif os.path.isfile(path+filename_7m):
@@ -565,7 +581,7 @@ def band_get(gal,hdr=None,band='',res='15',sfr_toggle=False,path='/media/jnofech
 def peakvels_get(gal,data_mode='',cube=None,mask=None,quadfit=True,write=True,best_cube=None,\
              path7m ='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-LP/working_data/osu/',\
              path12m='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-v1p0/',\
-             path7m_mask ='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-LP/working_data/for_inspection/',\
+             path7m_mask ='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-LP/working_data/osu/eros_masks/',\
              path12m_mask='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-v1p0/',\
              folder_vpeak='jnofech_peakvels/'):
     '''
@@ -584,6 +600,9 @@ def peakvels_get(gal,data_mode='',cube=None,mask=None,quadfit=True,write=True,be
     data_mode='12m' or '7m' : str
         Chooses where to find the output
         file, based on the selected data.
+        A 'hybrid' mode also exists, which
+        combines 12m and 7m data into a
+        single map.
     cube(=None) : SpectralCube
         Spectral cube for the galaxy.
     mask(=None) : SpectralCube OR Quantity 
@@ -630,38 +649,57 @@ def peakvels_get(gal,data_mode='',cube=None,mask=None,quadfit=True,write=True,be
         if verbose==True:
             print('No data_mode set. Defaulted to 12m+7m.')
         data_mode = '12m+7m'
-    
-    # Get filename.
-    if best_cube is None:
-        cube_discard, best_cube = cube_get(gal,data_mode,return_best=True)
-    if best_cube is None:
-        raise ValueError('Best data mode not specified! This is needed to find the peakvels .fits file.')
-    else:
-        filename = name+'_'+best_cube+'_co21_peakvels.fits' 
+    # Stick with 12m cubes when 'hybrid' is selected!
+#     data_mode_peakvels = data_mode
+#     if data_mode=='hybrid':
+#         data_mode = '12m+7m'
+        
 
     # Read from file, if possible!
     peakvels     = None
     peakvels_7m  = None
     peakvels_12m = None
     if data_mode in ['7m','hybrid']:
+        data_mode_temp = '7m'
+        # Get filename.
+        if best_cube is None:
+            cube_discard, best_cube  = cube_get(gal,data_mode_temp,return_best=True)
+        if (best_cube is None) or (best_cube=='None'):
+            raise ValueError('Best data mode not specified! This is needed to find the peakvels .fits file.')
+        else:
+            filename  = name+'_'+best_cube+'_co21_peakvels.fits'
+        # Read or write.
         path=path7m_mask+folder_vpeak
         if os.path.isfile(path+filename)==True:
             peakvels_7m = fits.open(path+filename)
             peakvels    = peakvels_7m[0].data
         else:
+            print(path+filename)
             if write==True:
                 print('\''+filename+'\' does not exist. Generating and saving new peakvels map!')
             else:
                 print('\''+filename+'\' does not exist. Generating new peakvels map!')
             # Define cube and mask!
-            cube = cube_get(gal,data_mode,path7m=path7m,path12m=path12m)
-            mask = mask_get(gal,data_mode,path7m=path7m_mask,path12m=path12m_mask)
+            cube = cube_get(gal,data_mode_temp,path7m=path7m,path12m=path12m)
+            mask = mask_get(gal,data_mode_temp,path7m=path7m_mask,path12m=path12m_mask)
             if (mask is not None) and (mask.size!=cube.size):
                 print('WARNING: Mask has different dimensions from cube!')
                 mask = None
-            peakvels = peakvels_gen(gal,data_mode,cube,mask,quadfit,write,best_cube)
+            peakvels = peakvels_gen(gal,data_mode_temp,cube,mask,quadfit,write,best_cube)
             peakvels_7m = fits.open(path+filename)   # A new file was just created!
+        best_cube_7m = best_cube
+        best_cube    = None                             # Cleanup, for 'hybrid' mode.
     if data_mode in ['12m','12m+7m','hybrid']:
+        data_mode_temp = '12m+7m'
+        # Get filename.
+        if best_cube is None:
+            cube_discard, best_cube  = cube_get(gal,data_mode_temp,return_best=True)
+        if (best_cube is None) or (best_cube=='None'):
+            raise ValueError('Best data mode not specified! This is needed to find the peakvels .fits file.')
+        else:
+            filename  = name+'_co21_'+best_cube+'_peakvels.fits'
+#             filename  = name+'_'+best_cube+'_co21_peakvels.fits'
+        # Read or write.
         path=path12m_mask+folder_vpeak
         if os.path.isfile(path+filename)==True:
             peakvels_12m = fits.open(path+filename)
@@ -672,16 +710,19 @@ def peakvels_get(gal,data_mode='',cube=None,mask=None,quadfit=True,write=True,be
             else:
                 print('\''+filename+'\' does not exist. Generating new peakvels map!')
             # Define cube and mask!
-            cube = cube_get(gal,data_mode,path7m=path7m,path12m=path12m)
-            mask = mask_get(gal,data_mode,path7m=path7m,path12m=path12m)
+            cube = cube_get(gal,data_mode_temp,path7m=path7m,path12m=path12m)
+            mask = mask_get(gal,data_mode_temp,path7m=path7m,path12m=path12m)
             if mask.size!=cube.size:
                 print('WARNING: Mask has different dimensions from cube!')
                 mask = None
-            peakvels = peakvels_gen(gal,data_mode,cube,mask,quadfit,write,best_cube)
+            peakvels = peakvels_gen(gal,data_mode_temp,cube,mask,quadfit,write,best_cube)
             peakvels_12m = fits.open(path+filename)   # A new file was just created!
+        best_cube_12m = best_cube
+        best_cube     = None                             # Cleanup, for 'hybrid' mode.
         
     # Combining the two, if hybrid mode is enabled!
     if data_mode in ['hybrid']:
+        hdr = peakvels_12m[0].header
         # Reproject the 7m map to the 12m's dimensions!
         # Conveniently, the interpolation is also done for us.
         peakvels_7m_modify = Projection.from_hdu(peakvels_7m)
@@ -694,6 +735,17 @@ def peakvels_get(gal,data_mode='',cube=None,mask=None,quadfit=True,write=True,be
         peakvels_hybrid = np.nan_to_num(peakvels_12m) + np.isnan(peakvels_12m)*np.nan_to_num(peakvels_7m) \
                                                       + peakvels_mask
         peakvels = peakvels_hybrid
+        # SAVE!
+        best_cube = 'hybrid_'+best_cube_7m+'&'+best_cube_12m
+        hdr['BUNIT'] = 'km  s-1 '  # Write this instead of 'KM/S  '.
+        # Save header and data into a .fits file, if specified!
+        hdu      = fits.PrimaryHDU(peakvels_hybrid,header=hdr)
+        filename = name+'_co21_'+best_cube+'_peakvels.fits'
+        path = path12m_mask+folder_vpeak
+        if os.path.isfile(path+filename)==False:
+            hdu.writeto(path+filename)
+        else:
+            print('WARNING: Did not write to \''+path+filename+'\', as this file already exists.') 
     if data_mode not in ['7m','12m+7m','hybrid']:
         print('WARNING: Invalid data_mode-- No mom1 was found!')
         peakvels = None
@@ -708,7 +760,7 @@ def peakvels_get(gal,data_mode='',cube=None,mask=None,quadfit=True,write=True,be
 def peakvels_gen(gal,data_mode='',cube=None,mask=None,quadfit=True,write=False,best_cube=None,\
              path7m ='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-LP/working_data/osu/',\
              path12m='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-v1p0/',\
-             path7m_mask ='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-LP/working_data/for_inspection/',\
+             path7m_mask ='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-LP/working_data/osu/eros_masks/',\
              path12m_mask='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-v1p0/',\
              folder_vpeak='jnofech_peakvels/'):
     '''
@@ -829,13 +881,9 @@ def peakvels_gen(gal,data_mode='',cube=None,mask=None,quadfit=True,write=False,b
             spec_interp = interpolate.interp1d(np.arange(spec.size),spec, fill_value='extrapolate')  # Units gone.
             peakvels = spec_interp(x0)
     elif data_mode in ['hybrid','both']:
-        if cube is not None:
-            print('peakvels_get() set to \'hybrid\' mode. Ignoring inputted cube.')
-        peakvels_7m  = peakvels_get(gal, '7m',None,quadfit,path7m,path12m)
-        peakvels_12m = peakvels_get(gal,'12m',None,quadfit,path7m,path12m)
-        raise ValueError("peakvels_get() - 'data_mode=hybrid' not yet implemented!")
+        raise ValueError("peakvels_gen() - 'data_mode=hybrid' should appear in peakvels_get(), not here!")
     else:
-        raise ValueError("peakvels_get() - invalid \'data_mode\'. Should be '7m', '12m', '12m+7m', or 'hybrid'.")
+        raise ValueError("peakvels_gen() - invalid \'data_mode\'. Should be '7m', '12m', '12m+7m', or 'hybrid'.")
 
     # Adding units back
     peakvels = peakvels*spec.unit
@@ -843,6 +891,7 @@ def peakvels_gen(gal,data_mode='',cube=None,mask=None,quadfit=True,write=False,b
     
     # Masking with spatial mask, if no mask was provided
     if mask_provided==False:
+        print('WARNING: No cube mask provided! Using spatial mask instead.')
         I_mom1 = mom1_get(gal,data_mode,False,False,path7m,path12m)
         peakvels[np.isnan(I_mom1)] = np.nan
     
@@ -855,19 +904,23 @@ def peakvels_gen(gal,data_mode='',cube=None,mask=None,quadfit=True,write=False,b
         hdu      = fits.PrimaryHDU(peakvels.value,header=hdr)
         if best_cube is None:
             print('WARNING: Best data mode not specified! Will assume "'+data_mode.lower()+'".')
-            filename = name+'_'+data_mode.lower()+'_co21_peakvels.fits'
-        else:
-            filename = name+'_'+best_cube+'_co21_peakvels.fits'
+            best_cube = data_mode.lower()
+        
         if data_mode in ['7m']:
+            filename = name+'_'+best_cube+'_co21_peakvels.fits'
             path=path7m_mask+folder_vpeak
-        elif data_mode in ['12m','12m+7m','hybrid','both']:
+        elif data_mode in ['12m+7m','hybrid']:
+            filename = name+'_co21_'+best_cube+'_peakvels.fits'
             path=path12m_mask+folder_vpeak
+        
+#         print(path+filename)
         if os.path.isfile(path+filename)==False:
             hdu.writeto(path+filename)
         else:
             print('WARNING: Did not write to \''+path+filename+'\', as this file already exists.')    
 
     return peakvels.value
+
     
 def PA_get(gal): 
     '''
