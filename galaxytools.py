@@ -21,15 +21,19 @@ import rotcurve_tools as rc
 import copy
 import os
 
-def galaxy(name):
+def galaxy(name,customPA=True,custominc=True,customcoords=True):
     '''
     Creates Galaxy object.
     Features kinematic PA and a quick
     bandaid fix for missing 'vsys' values!
     '''
     gal = Galaxy(name.upper())
-    gal.position_angle = PA_get(gal)
-    gal.inclination    = incl_get(gal)
+    if customPA==True:
+        gal.position_angle  = PA_get(gal)
+    if custominc==True:
+        gal.inclination     = incl_get(gal)
+    if customcoords==True:
+        gal.center_position = coords_get(gal)
     
     if gal.vsys is None or np.isnan(gal.vsys):
         I_mom1a = mom1_get(gal,data_mode='12m',verbose=False)
@@ -42,54 +46,16 @@ def galaxy(name):
             print('WARNING: mom1 maps (7m, 12m+7m) missing. Galaxy object has no vsys.')
             gal.vsys = np.nan
     
-    # Custom central coordinates, in case provided values are very incorrect
-    if gal.name.lower()=='ic5332':
-        # Central coords look more reasonable, but unsure of effect on rotcurve..
-        gal.center_position = SkyCoord(353.603, gal.center_position.dec.value,\
-                                       unit=(u.deg, u.deg), frame='fk5')
-    if gal.name.lower()=='ngc1385':
-        # Noticeable improvement on RC!
-        gal.center_position = SkyCoord(54.371, -24.502,\
-                                       unit=(u.deg, u.deg), frame='fk5')
-#    if gal.name.lower()=='ngc1559':
-#        # Central coords look more reasonable, and mom1 data is now in two tight "trends"
-#        # rather than being everywhere. RC got worse, though.
-#        gal.center_position = SkyCoord(64.405, -62.7855,\
-#                                       unit=(u.deg, u.deg), frame='fk5')
-    if gal.name.lower()=='ngc2775':
-        # Central coords look more reasonable, and mom1 data is now focused into one "trend"
-        # (with much more scatter) rather than being in two tighter trends. RC looks better.
-        gal.center_position = SkyCoord(137.582, 7.037970066070557,\
-                                       unit=(u.deg, u.deg), frame='fk5')
-    if gal.name.lower()=='ngc4207':
-        # Central coords look more reasonable, and mom1 data is focused more into one of
-        # the two "trends". RC looks better, but the error bars are much, much worse.
-        gal.center_position = SkyCoord(183.879, 9.584930419921875,\
-                                   unit=(u.deg, u.deg), frame='fk5')
-    if gal.name.lower()=='ngc4254':
-        # Central coords look MUCH more reasonable.
-        # Much of the mom1 data is still below zero for some reason. Improved, but nowhere near perfect.
-        gal.center_position = SkyCoord(184.718, gal.center_position.dec.value,\
-                                       unit=(u.deg, u.deg), frame='fk5')
-#    if gal.name.lower()=='ngc4694':
-#        # No effect whatsoever. Mom1 too low-res to tell if the coords are more reasonable, anyways.
-#        gal.center_position = SkyCoord(192.064, 10.9838,\
-#                                   unit=(u.deg, u.deg), frame='fk5')
-    if gal.name.lower()=='ngc4731':
-        # Central coords look somewhat more reasonable. RC is horribly jagged and dips into negatives,
-        # but is still a huge improvement.
-        gal.center_position = SkyCoord(192.750, -6.39,\
-                                   unit=(u.deg, u.deg), frame='fk5')
-#    if gal.name.lower()=='ngc4781':
-#        # It got worse. Discard.
-#        gal.center_position = SkyCoord(193.596, -10.5366,\
-#                                       unit=(u.deg, u.deg), frame='fk5')
-    if gal.name.lower()=='ngc5068':
-        # Central seems better if you compare mom1 image to other NED images, but unsure if the
-        # new coords are more reasonable. Mom1 data went from 2 trends to 1 trend+more scatter.
-        # RC is somewhat jaggier, but still has very small errors.
-        gal.center_position = SkyCoord(199.7033, -21.045,\
-                                       unit=(u.deg, u.deg), frame='fk5')
+    if gal.vsys is None or np.isnan(gal.vsys):
+        I_mom1a = mom1_get(gal,data_mode='12m',verbose=False)
+        I_mom1b = mom1_get(gal,data_mode='7m',verbose=False)
+        if I_mom1a is not None:
+            gal.vsys = np.nanmean(I_mom1a)*u.km/u.s
+        elif I_mom1b is not None:
+            gal.vsys = np.nanmean(I_mom1b)*u.km/u.s
+        else:
+            print('WARNING: mom1 maps (7m, 12m+7m) missing. Galaxy object has no vsys.')
+            gal.vsys = np.nan
     return gal
     
 def mom0_get(gal,data_mode='',\
@@ -1042,7 +1008,143 @@ def incl_get(gal):
         print('galaxytools.incl_get():  Overwrote inclination with an eyeballed value. May not be accurate!')
         incl = 45.*u.deg
     return incl
+
+def coords_get(gal):
+    '''
+    Gets the central RA and Dec
+    for the indicated galaxy, if 
+    the provided ones look a bit off.
+    NOTE: You'll probably need to
+    save this into the headers as well,
+    along with corresponding pixel
+    coordinates, if you're working with
+    a function that grabs central
+    coords in some way!
     
+    Parameters:
+    -----------
+    gal : str OR Galaxy
+        Name of galaxy, OR Galaxy
+        object.
+        
+    Returns:
+    --------
+    RA : Quantity (float*u.deg)
+        Right ascension, in degrees.
+    Dec : Quantity (float*u.deg)
+        Declination, in degrees.
+    '''
+    if isinstance(gal,Galaxy):
+        name = gal.name.lower()
+    elif isinstance(gal,str):
+        name = gal.lower()
+        print('New Galaxy object created for '+name+'!')
+        gal = Galaxy(name.upper())
+    else:
+        raise ValueError("'gal' must be a str or galaxy!")
+    
+    # Get incl!
+    RA_cen = gal.center_position.ra.value
+    Dec_cen = gal.center_position.dec.value
+    
+    # OVERRIDES
+    # Done by eyeballing mom0 maps, mom1 maps, and optical images!
+    # Custom central coordinates, in case provided values are very incorrect.
+    if gal.name.lower()=='ic5332':
+        # Central coords look more reasonable, but unsure of effect on rotcurve.
+        RA_cen,Dec_cen = 353.603, Dec_cen
+    if gal.name.lower()=='ngc1385':
+        # Noticeable improvement on RC!
+        RA_cen,Dec_cen = 54.371, -24.502
+#     if gal.name.lower()=='ngc1559':
+#         # Discard; made RC worse!
+#         RA_cen,Dec_cen = 64.41277493218173,-62.78098504774272
+    if gal.name.lower()=='ngc1637':
+        # RC improved!
+        RA_cen,Dec_cen = 70.37261642567097,-2.8589855372620074
+    if gal.name.lower()=='ngc1792':
+        # RC slightly worse than default, but makes more physical sense.
+        RA_cen,Dec_cen = 76.30703516023384,-37.97824645945883
+    if gal.name.lower()=='ngc1809':
+        # mom1-vs-R makes less sense, but RC fit improved?? Unsure where center should be, exactly.
+        RA_cen,Dec_cen = 75.50692806856604,-69.56348536585699
+    if gal.name.lower()=='ngc2090':
+        # Better RC, better mom1 fit!
+        RA_cen,Dec_cen = 86.75875069069347,-34.250416010642695
+    if gal.name.lower()=='ngc2283':
+        # Better RC, better mom1 fit!
+        RA_cen,Dec_cen = 101.4708932087007,-18.210409767930265
+    if gal.name.lower()=='ngc2775':
+        # Central coords look more reasonable, and mom1 data is now focused into one "trend"
+        # (with much more scatter) rather than being in two tighter trends. RC looks better.
+        RA_cen,Dec_cen = 137.582, 7.037970066070557
+    if gal.name.lower()=='ngc3511':
+        # Better RC fit, better mom1 fit!
+        RA_cen,Dec_cen = 165.8544282151235,-23.08680662885883
+    if gal.name.lower()=='ngc4207':
+        # Central coords look more reasonable, and mom1 data is focused more into one of
+        # the two "trends". RC looks better, but the error bars are much, much worse.
+        RA_cen,Dec_cen = 183.879, 9.584930419921875
+    if gal.name.lower()=='ngc4293':
+        # Slightly jaggier RC.
+        RA_cen,Dec_cen = 185.30534915493902,18.3829153738402
+    if gal.name.lower()=='ngc4254':
+        # Central coords look MUCH more reasonable.
+        # Much of the mom1 data is still below zero for some reason. Improved, but nowhere near perfect.
+        RA_cen,Dec_cen = 184.718, gal.center_position.dec.value
+    if gal.name.lower()=='ngc4424':
+        # RC even more wild, not that it was reliable to begin with.
+        RA_cen,Dec_cen = 186.79872575318072,9.421769823689191
+    if gal.name.lower()=='ngc4457':
+        # Much better RC and mom1 fit!
+        RA_cen,Dec_cen = 187.24763345394362,3.570680697523369
+    if gal.name.lower()=='ngc4569':
+        # No improvement, despite it being a "clean"-looking galaxy. No idea why mom1 fit is still split.
+        RA_cen,Dec_cen = 189.20905594798623,13.163193855398312
+    if gal.name.lower()=='ngc4571':
+        # Better mom1 fit, although DF still hates it for some reason.
+        RA_cen,Dec_cen = 189.23456667180918,14.219281570910422
+    if gal.name.lower()=='ngc4654':
+        # Improved RC and mom1 fit!
+        RA_cen,Dec_cen = 190.98853263428225,13.12708187068814
+    if gal.name.lower()=='ngc4694':
+        # No effect.
+        RA_cen,Dec_cen = 192.06528369534368,10.984342977376253
+    if gal.name.lower()=='ngc4731':
+        # Central coords look somewhat more reasonable. RC is horribly jagged and dips into negatives,
+        # but is still a huge improvement.
+        RA_cen,Dec_cen = 192.750, -6.39
+    if gal.name.lower()=='ngc4781':
+        # Slightly _worse_ RC and mom1 fit, although central coords make more physical sense.
+        RA_cen,Dec_cen = 193.59747846280533,-10.535709989241946
+    if gal.name.lower()=='ngc4826':
+        # No noticeable improvement.
+        RA_cen,Dec_cen = 194.1847900357396,21.68321257606272
+    if gal.name.lower()=='ngc4951':
+        # Big improvement on RC and mom1 fit!
+        RA_cen,Dec_cen = 196.28471964105486,-6.493484077561956
+    if gal.name.lower()=='ngc5042':
+        # Improved RC and mom1 fit!
+        RA_cen,Dec_cen = 198.87810723481277,-23.98319382130314
+    if gal.name.lower()=='ngc5068':
+        # Central seems better if you compare mom1 image to other NED images, but unsure if the
+        # new coords are more reasonable. Mom1 data went from 2 trends to 1 trend+more scatter.
+        # RC is somewhat jaggier, but still has very small errors.
+        RA_cen,Dec_cen = 199.7033, -21.045
+    if gal.name.lower()=='ngc5530':
+        # Improved RC and mom1 fit!
+        RA_cen,Dec_cen = 214.61841986860225,-43.386535568706506
+    if gal.name.lower()=='ngc5643':
+        # Slightly improved RC and mom1 fit!
+        RA_cen,Dec_cen = 218.17362379698923,-44.17440210179905
+    if gal.name.lower()=='ngc6744':
+        # Improved RC and mom1 fit!
+        RA_cen,Dec_cen = 287.43201437043336,-63.857521145661536
+    
+    # Turn into RA, Dec!
+    gal.center_position = SkyCoord(RA_cen,Dec_cen,unit=(u.deg,u.deg), frame='fk5')
+    return gal.center_position
+
 def info(gal,conbeam=None,data_mode='',sfr_band_uv='nuv',sfr_band_ir='w3',sfr_autocorrect=False):
     '''
     Returns basic info from galaxies.
