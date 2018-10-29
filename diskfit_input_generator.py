@@ -421,7 +421,7 @@ def gen_input(name,data_mode='7m',mapmode='mom1',errors=False,errors_exist=False
         return toggle_xcen, toggle_PA, toggle_eps, toggle_vsys
         
 def read_output(name,iteration=1,alteration=[False]*8,verbose=True,\
-              diskfit_folder='diskfit_procedural/'):
+              custom_input=False,diskfit_folder='diskfit_procedural/'):
     '''
     Reads the output file for 'iteration',
     and returns the output values as astropy
@@ -444,12 +444,19 @@ def read_output(name,iteration=1,alteration=[False]*8,verbose=True,\
     verbose=True : bool
         Prints what's happening as the output
         files are read.
+    custom_input=False : bool
+        Toggles whether a custom run is
+        read instead of an automated run.
     '''
     # Read the DiskFit output files!
     if verbose==True:
-        print("\nReading iteration #"+str(iteration)+"'s output file:")
+        if custom_input==False:
+            print("\nReading iteration #"+str(iteration)+"'s output file:")
+        else:
+            print("\nReading CUSTOM output file, '_c"+str(iteration)+".inp':")
+    extension = custom_input*("_c") + (not custom_input)*("_v")
     output_filename = "/media/jnofech/BigData/galaxies/"+diskfit_folder+"Output/"+name.lower()\
-                          +"_v"+str(iteration)+".out"
+                          +extension+str(iteration)+".out"
         
     if os.path.isfile(output_filename):
         file = open(output_filename,'r')
@@ -745,8 +752,38 @@ def read_output(name,iteration=1,alteration=[False]*8,verbose=True,\
             alteration, chi2_out
     # ^ Edit later on if need be.
     
+def checkcustom(name,iteration=1,diskfit_folder='diskfit_procedural/'):
+    '''
+    Checks if a galaxy has a custom input
+    file, for a given "iteration".
+    (They're not really iterations anymore,
+    BUT higher-numbered files will be
+    prioritized. e.g. '_c2' will be read
+    before '_c1'.)
+    
+    -----------
+    Parameters:
+    -----------
+    
+    name : str
+        Galaxy's name.
+    iteration=1 : int
+        Iteration number.
+    diskfit_folder='diskfit_procedural/' : str
+        Folder name, for data mode
+        and data resolution.
+    '''
+    # Read the DiskFit output files!
+    output_filename = "/media/jnofech/BigData/galaxies/"+diskfit_folder+"Output/"+name.lower()\
+                          +"_c"+str(iteration)+".out"
+        
+    if os.path.isfile(output_filename):
+        return True
+    else:
+        return False
+    
 def read_rotcurve(name,data_mode='7m',iteration=1,\
-              diskfit_folder='diskfit_procedural/'):
+              custom_input=False, diskfit_folder='diskfit_procedural/'):
     '''
     Reads the output file for 'iteration',
     and returns the rotation curve.
@@ -762,14 +799,18 @@ def read_rotcurve(name,data_mode='7m',iteration=1,\
         '12m' (unsupported) - 12m data.
     iteration=1 : int
         Iteration number.
+    custom_input=False : bool
+        Toggles whether a custom run is
+        read instead of an automated run.
     '''
     # Read the DiskFit output files!
+    extension = custom_input*("_c") + (not custom_input)*("_v")
     output_filename = "/media/jnofech/BigData/galaxies/"+diskfit_folder+"Output/"+name.lower()\
-                          +"_v"+str(iteration)+".out"
+                          +extension+str(iteration)+".out"
     if os.path.isfile(output_filename):
         file = open(output_filename,'r')
     else:
-        print('WARNING: '+name+'\'s output file missing!')
+        print('WARNING: '+name+'\'s output file ("'+extension+str(iteration)+'") missing!')
         return [np.nan]*3
 
     # Initializing. Do not touch.

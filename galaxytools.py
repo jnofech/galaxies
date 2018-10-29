@@ -937,7 +937,7 @@ def PA_get(gal):
         
     # b) PA is off by 180 degrees.
     galaxies_180=['IC5273','NGC1300','NGC1365','NGC1385','NGC1511','NGC1512','NGC1559',\
-                  'NGC1637','NGC1792','NGC2090','NGC2283','NGC2566','NGC2835','NGC3511','NGC4298',\
+                  'NGC1637','NGC1792','NGC2090','NGC2283','NGC2835','NGC3511','NGC4298',\
                   'NGC4535','NGC4731','NGC4781','NGC4826','NGC5042','NGC5134','NGC5530']
     if name.upper() in galaxies_180:
         if PA.value>180.:
@@ -968,6 +968,8 @@ def PA_get(gal):
         PA = 170.*u.deg
     if gal.name.lower()=='ngc0685':
         PA = 100.*u.deg
+    if gal.name.lower()=='ngc2566':
+        PA = 310.*u.deg
     
     return PA
     
