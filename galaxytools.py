@@ -1364,7 +1364,7 @@ def map2D_to_1D(rad,maps,stride=1):
     # Returning everything!
     return rad1D,maps
 
-def sigmas(gal,hdr=None,I_mom0=None,I_tpeak=None,alpha=6.7,mode='',sigmode=''):
+def sigmas(gal,hdr=None,I_mom0=None,I_tpeak=None,alpha=6.7,data_mode='',mapmode='mom1',sigmode=''):
     '''
     Returns things like 'sigma' (line width, in km/s)
     or 'Sigma' (surface density) for a galaxy. The
@@ -1390,15 +1390,18 @@ def sigmas(gal,hdr=None,I_mom0=None,I_tpeak=None,alpha=6.7,mode='',sigmode=''):
     alpha=6.7 : float
         CO(2-1) to H2 conversion factor,
         in (Msun pc^-2) / (K km s^-1).
-    mode='' : str
-        'PHANGS'     - Uses PHANGS rotcurve.
-                       (DEFAULT)
-        'diskfit12m' - Uses fitted rotcurve from
-                        12m+7m data.        
-        'diskfit7m'  - Uses fitted rotcurve from
-                        7m data.
-        This determines the min and max
-        values of the output 'rad' array.
+    data_mode(='') : str
+        '7m'            - uses 7m data.
+        '12m' (default) - 12m data.
+        'hybrid'        - combines 7m and 12m.
+        'phangs'        - Uses the PHANGS team's
+                            12m+7m rotcurves,
+                            provided on server.
+    mapmode(='mom1') : str
+        'mom1' - uses mom1 map of specified
+                 data_mode.
+        'peakvels' - uses peakvels map of 
+                     specified data_mode.
     sigmode='' : str
         'sigma' - returns linewidth.
         'Sigma' - returns H2 surface density.
@@ -1431,12 +1434,8 @@ def sigmas(gal,hdr=None,I_mom0=None,I_tpeak=None,alpha=6.7,mode='',sigmode=''):
         print('galaxytools.sigmas(): WARNING: I_tpeak found automatically.')
         I_tpeak = tpeak_get(gal)
     
-    if mode=='':
-        print('WARNING: No \'mode\' selected for galaxytools.sigmas()!\n        Will determine min and max \'rad\' values using PHANGS rotcurve.')
-        mode='PHANGS'
-    
     # (!!!) Ensure beforehand that the PA is kinematic, not photometric!
-    x, rad, x, x = gal.rotmap(header=hdr,mode=mode)
+    x, rad, x, x = gal.rotmap(header=hdr,data_mode=data_mode,mapmode=mapmode)
     d = gal.distance
     d = d.to(u.pc)                                          # Converts d from Mpc to pc.
 

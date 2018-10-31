@@ -16,9 +16,9 @@ import pandas as pd
 import galaxytools as tools
 
 
-def rotcurve(gal,mode='',
-#              rcdir='/mnt/bigdata/PHANGS/OtherData/derived/Rotation_curves/'):
-             rcdir='/media/jnofech/BigData/PHANGS/OtherData/derived/Rotation_curves/'):
+def rotcurve(gal,data_mode='',mapmode='mom1',\
+#              rcpath='/mnt/bigdata/PHANGS/OtherData/derived/Rotation_curves/'):
+             rcpath='/media/jnofech/BigData/PHANGS/OtherData/derived/Rotation_curves/'):
     '''
     Reads a provided rotation curve table and
     returns interpolator functions for rotational
@@ -30,12 +30,18 @@ def rotcurve(gal,mode='',
     gal : str OR Galaxy
         Name of galaxy, OR Galaxy
         object.
-    mode='' : str
-        'PHANGS'     - Uses PHANGS rotcurve.
-        'diskfit12m' - Uses fitted rotcurve from
-                        12m+7m data.        
-        'diskfit7m'  - Uses fitted rotcurve from
-                        7m data.
+    data_mode(='') : str
+        '7m'            - uses 7m data.
+        '12m' (default) - 12m data.
+        'hybrid'        - combines 7m and 12m.
+        'phangs'        - Uses the PHANGS team's
+                            12m+7m rotcurves,
+                            provided on server.
+    mapmode(='mom1') : str
+        'mom1' - uses mom1 map of specified
+                 data_mode.
+        'peakvels' - uses peakvels map of 
+                     specified data_mode.
         
     Returns:
     --------
@@ -59,36 +65,50 @@ def rotcurve(gal,mode='',
     else:
         raise ValueError("'gal' must be a str or galaxy!")
     
-
-    d = (gal.distance).to(u.parsec)                  # Distance to galaxy, from Mpc to pc   
+    # Generates folder name and RC mode (which are used in RC filenames).
+    if mapmode in ['peakvels','vpeak']:
+        mapmode = 'vpeak'
+    if mapmode not in ['vpeak','mom1']:
+        raise ValueError('rotcurve : Invalid mapmode! Should be mom1 or peakvels.')
+    if data_mode == '7m':
+        data_mode = '7m'
+    elif data_mode in ['12m','12m+7m']:
+        data_mode = '12m+7m'
+    elif data_mode.lower() in ['both','hybrid']:
+        data_mode = 'hybrid'  
+    elif data_mode=='':
+        print('rotcurve : No data_mode set. Defaulted to 12m+7m.')
+        data_mode = '12m+7m'
+    elif data_mode=='phangs':
+        print('rotcurve : WARNING: Using old PHANGS 12m+7m rotcurves. Likely outdated!')
+    else:
+        raise ValueError('rotcurve : Invalid data_mode! Should be 7m, 12m, or hybrid.')
+    rcmode = mapmode+'_'+data_mode       # RC is generated from <mapmode> data at <data_mode> resolution.
+    folder='diskfit_auto_'+rcmode+'/'
     
-    rcdir_jnofech = '/media/jnofech/BigData/PHANGS/OtherData/derived/Rotation_curves/'
-                                                                     # Joseph's main rotcurve directory.
+
+    d = (gal.distance).to(u.parsec)                  # Distance to galaxy, from Mpc to pc
+    
     # Rotation Curves
-    if mode.lower() not in ['phangs','diskfit12m','diskfit7m']:
-        print('WARNING: Invalid \'mode\' selected for rotcurve_tools.rotcurve()!\n        Will use PHANGS rotcurve.')
-        mode='PHANGS'
-    if mode.lower()=='phangs':
-        fname = rcdir+name.lower()+"_co21_12m+7m+tp_RC.txt"
-        R, vrot, vrot_e = np.loadtxt(fname,skiprows=True,unpack=True)
-    elif mode.lower()=='diskfit12m':
-        fname = rcdir+'diskfit12m/'+name.lower()+"_co21_12m+7m_RC.txt"    # Not on server.
-        if not os.path.isfile(fname):
-            fname = rcdir+'diskfit7m/'+name.lower()+"_co21_12m+7m_RC_procedural.txt"# Not on server.Procedural.
-#             print('NOTE: Custom rotcurve not found-- using procedurally-generated rotcurve instead!')
-        R, vrot, vrot_e = np.loadtxt(fname,skiprows=True,unpack=True)
-    elif mode.lower()=='diskfit7m':
-        fname = rcdir+'diskfit7m/'+name.lower()+"_co21_7m_RC.txt"         # Not on server.
-        use_old = False    # Enable if you want to use the rotcurves from the older, smaller dataset.
-        if use_old==False or not os.path.isfile(fname):
-            fname = rcdir+'diskfit7m/'+name.lower()+"_co21_7m_RC_procedural.txt"  # Not on server. Procedural.
-#             print('NOTE: Custom rotcurve not found-- using procedurally-generated rotcurve instead!')
+    if data_mode.lower()=='phangs':
+        fname = rcpath+name.lower()+"_co21_12m+7m+tp_RC.txt"
         R, vrot, vrot_e = np.loadtxt(fname,skiprows=True,unpack=True)
     else:
-        raise ValueError("'mode' must be PHANGS, diskfit12m, or diskfit7m!")
+        fname = rcpath+folder+name.lower()+"_co21_"+rcmode+"_RC_procedural.txt"
+        fname_b = rcpath+'diskfit_manual_12m/'+name.lower()+"_co21_12m+7m_RC.txt"   # Backup data for 12m.
+        if os.path.isfile(fname):
+            R, vrot, vrot_e = np.loadtxt(fname,skiprows=True,unpack=True)
+        elif data_mode=='12m+7m' and os.path.isfile(fname_b):
+            # Backup purposes only! Maybe replace these in the future?
+            print('rotcurve : BACKUP - Reading "'+fname_b+'" instead! (Old manual 12m fits)')
+            R, vrot, vrot_e = np.loadtxt(fname_b,skiprows=True,unpack=True)
+        else:
+            raise ValueError('rotcurve : File not found: '+fname)
+        
+        
+    # R = Radius from center of galaxy, in arcsec.
+    # vrot = Rotational velocity, in km/s.
 
-        # R = Radius from center of galaxy, in arcsec.
-        # vrot = Rotational velocity, in km/s.
     # (!) When adding new galaxies, make sure R is in arcsec and vrot is in km/s, but both are 
     #     floats!
     
@@ -147,7 +167,7 @@ def rotcurve_smooth(R,vrot,R_e,vrot_e=None,smooth='spline',knots=8):
         'universal' (Persic & Salucci 1995)
     knots=8 : int
         Number of internal knots in BSpline of
-        vrot, if mode=='spline'.
+        vrot, if smooth=='spline'.
         
         
     Returns:
@@ -267,7 +287,7 @@ def epicycles(R,vrot):
     
     return k
     
-def rotmap(gal,header,position_angle=None,inclination=None,mode='PHANGS'):
+def rotmap(gal,header,position_angle=None,inclination=None,data_mode='',mapmode='mom1'):
     '''
     Returns "observed velocity" map, and "radius
     map". (The latter is just to make sure that the
@@ -287,12 +307,18 @@ def rotmap(gal,header,position_angle=None,inclination=None,mode='PHANGS'):
         will be used if not specified.
     inclination=None : astropy.units.Quantity
         Override for inclination, in degrees.
-    mode='PHANGS' : str
-        'PHANGS'     - Uses PHANGS rotcurve.
-        'diskfit12m' - Uses fitted rotcurve from
-                        12m+7m data.        
-        'diskfit7m'  - Uses fitted rotcurve from
-                        7m data.
+    data_mode(='') : str
+        '7m'            - uses 7m data.
+        '12m' (default) - 12m data.
+        'hybrid'        - combines 7m and 12m.
+        'phangs'        - Uses the PHANGS team's
+                            12m+7m rotcurves,
+                            provided on server.
+    mapmode(='mom1') : str
+        'mom1' - uses mom1 map of specified
+                 data_mode.
+        'peakvels' - uses peakvels map of 
+                     specified data_mode.
         
     Returns:
     --------
@@ -315,6 +341,24 @@ def rotmap(gal,header,position_angle=None,inclination=None,mode='PHANGS'):
         gal = tools.galaxy(name.upper())
     else:
         raise ValueError("'gal' must be a str or galaxy!")
+    # data_mode, mapmode
+    if mapmode in ['peakvels','vpeak']:
+        mapmode = 'vpeak'
+    if mapmode not in ['vpeak','mom1']:
+        raise ValueError('rotcurve : Invalid mapmode! Should be mom1 or peakvels.')
+    if data_mode == '7m':
+        data_mode = '7m'
+    elif data_mode in ['12m','12m+7m']:
+        data_mode = '12m+7m'
+    elif data_mode.lower() in ['both','hybrid']:
+        data_mode = 'hybrid'  
+    elif data_mode=='':
+        print('rotcurve : No data_mode set. Defaulted to 12m+7m.')
+        data_mode = '12m+7m'
+    elif data_mode=='phangs':
+        print('rotcurve : WARNING: Using old PHANGS 12m+7m rotcurves. Likely outdated!')
+    else:
+        raise ValueError('rotcurve : Invalid data_mode! Should be 7m, 12m, or hybrid.')
     
     vsys = gal.vsys
     
@@ -332,7 +376,7 @@ def rotmap(gal,header,position_angle=None,inclination=None,mode='PHANGS'):
     d = (gal.distance).to(u.parsec)                  # Distance to galaxy, from Mpc to pc
 
     # vrot Interpolation
-    R_1d, vrot,R_e,vrot_e = rotcurve(name,mode=mode)  # Creates "vrot" interpolation function, and 1D array of R.
+    R_1d, vrot,R_e,vrot_e = rotcurve(name,data_mode=data_mode,mapmode=mapmode)  # Creates "vrot" interpolation function, and 1D array of R.
 
 
     # Generating displayable grids
@@ -479,7 +523,7 @@ def beta(R,vrot_s):
     beta = interpolate.BSpline(t,c,k, extrapolate=True)     # Cubic interpolation of beta
     return beta
 
-def linewidth_iso(gal,beam=None,smooth='spline',knots=8,mode='PHANGS'):
+def linewidth_iso(gal,beam=None,smooth='spline',knots=8,data_mode='',mapmode='mom1'):
     '''
     Returns the effective LoS velocity dispersion
     due to the galaxy's rotation, sigma_gal, for
@@ -505,13 +549,19 @@ def linewidth_iso(gal,beam=None,smooth='spline',knots=8,mode='PHANGS'):
         Number of INTERNAL knots in BSpline
         representation of rotation curve, which
         is used in calculation of epicyclic
-        frequency (and, therefore, sigma_gal).    
-    mode='PHANGS' : str
-        'PHANGS'     - Uses PHANGS rotcurve.
-        'diskfit12m' - Uses fitted rotcurve from
-                        12m+7m data.        
-        'diskfit7m'  - Uses fitted rotcurve from
-                        7m data.
+        frequency (and, therefore, sigma_gal).
+    data_mode(='') : str
+        '7m'            - uses 7m data.
+        '12m' (default) - 12m data.
+        'hybrid'        - combines 7m and 12m.
+        'phangs'        - Uses the PHANGS team's
+                            12m+7m rotcurves,
+                            provided on server.
+    mapmode(='mom1') : str
+        'mom1' - uses mom1 map of specified
+                 data_mode.
+        'peakvels' - uses peakvels map of 
+                     specified data_mode.
         
     Returns:
     --------
@@ -537,7 +587,7 @@ def linewidth_iso(gal,beam=None,smooth='spline',knots=8,mode='PHANGS'):
     Rc = beam*d / u.rad                         # Beam size, in parsecs
     
     # Use "interp" to generate R, vrot (smoothed), k (epicyclic frequency).
-    R, vrot, R_e, vrot_e = gal.rotcurve(mode=mode)
+    R, vrot, R_e, vrot_e = gal.rotcurve(data_mode=data_mode,mapmode=mapmode)
     R, vrot_s            = rotcurve_smooth(R,vrot,R_e,vrot_e,smooth=smooth,knots=knots)
     k = epicycles(R,vrot_s)
     

@@ -289,9 +289,9 @@ class Galaxy(object):
 
         return self.center_position.to_pixel(wcs)
 
-    def rotcurve(self,mode='',
-                 #rcdir='/mnt/bigdata/PHANGS/OtherData/derived/Rotation_curves/'):
-                 rcdir='/media/jnofech/BigData/PHANGS/OtherData/derived/Rotation_curves/'):
+    def rotcurve(self,data_mode='',mapmode='mom1',\
+#              rcpath='/mnt/bigdata/PHANGS/OtherData/derived/Rotation_curves/'):
+             rcpath='/media/jnofech/BigData/PHANGS/OtherData/derived/Rotation_curves/'):
         '''
         Reads a provided rotation curve table and
         returns interpolator functions for rotational
@@ -300,12 +300,21 @@ class Galaxy(object):
         
         Parameters:
         -----------
-        mode : str
-            'PHANGS'     - Uses PHANGS rotcurve.
-            'diskfit12m' - Uses fitted rotcurve from
-                            12m+7m data.        
-            'diskfit7m'  - Uses fitted rotcurve from
-                            7m data.
+        gal : str OR Galaxy
+            Name of galaxy, OR Galaxy
+            object.
+        data_mode(='') : str
+            '7m'            - uses 7m data.
+            '12m' (default) - 12m data.
+            'hybrid'        - combines 7m and 12m.
+            'phangs'        - Uses the PHANGS team's
+                                12m+7m rotcurves,
+                                provided on server.
+        mapmode(='mom1') : str
+            'mom1' - uses mom1 map of specified
+                     data_mode.
+            'peakvels' - uses peakvels map of 
+                         specified data_mode.
             
         Returns:
         --------
@@ -319,32 +328,45 @@ class Galaxy(object):
         vrot_e : np.ndarray
             1D array of original rotcurve errors, in pc.
         '''
-
+        # Generates folder name and RC mode (which are used in RC filenames).
+        if mapmode in ['peakvels','vpeak']:
+            mapmode = 'vpeak'
+        if mapmode not in ['vpeak','mom1']:
+            raise ValueError('rotcurve : Invalid mapmode! Should be mom1 or peakvels.')
+        if data_mode == '7m':
+            data_mode = '7m'
+        elif data_mode in ['12m','12m+7m']:
+            data_mode = '12m+7m'
+        elif data_mode.lower() in ['both','hybrid']:
+            data_mode = 'hybrid'  
+        elif data_mode=='':
+            print('rotcurve : No data_mode set. Defaulted to 12m+7m.')
+            data_mode = '12m+7m'
+        elif data_mode=='phangs':
+            print('rotcurve : WARNING: Using old PHANGS 12m+7m rotcurves. Likely outdated!')
+        else:
+            raise ValueError('rotcurve : Invalid data_mode! Should be 7m, 12m, or hybrid.')
+        rcmode = mapmode+'_'+data_mode       # RC is generated from <mapmode> data at <data_mode> resolution.
+        folder='diskfit_auto_'+rcmode+'/'
+    
         # Basic info
         d = (self.distance).to(u.parsec)                  # Distance to galaxy, from Mpc to pc
         
         # Rotation Curves
-        if mode.lower() not in ['phangs','diskfit12m','diskfit7m']:
-            print('WARNING: Invalid \'mode\' selected for Galaxy.rotcurve()!\n        Will use PHANGS rotcurve.')
-            mode='PHANGS'
-        if mode.lower()=='phangs':
-            fname = rcdir+self.name.lower()+"_co21_12m+7m+tp_RC.txt"
-            R, vrot, vrot_e = np.loadtxt(fname,skiprows=True,unpack=True)
-        elif mode.lower()=='diskfit12m':
-            fname = rcdir+'diskfit12m/'+self.name.lower()+"_co21_12m+7m_RC.txt"    # Not on server.
-            if not os.path.isfile(fname):
-                fname = rcdir+'diskfit7m/'+self.name.lower()+"_co21_12m+7m_RC_procedural.txt"# Not on server.Procedural.
-#                print('NOTE: Custom rotcurve not found-- using procedurally-generated rotcurve instead!')
-            R, vrot, vrot_e = np.loadtxt(fname,skiprows=True,unpack=True)
-        elif mode.lower()=='diskfit7m':
-            fname = rcdir+'diskfit7m/'+self.name.lower()+"_co21_7m_RC.txt"  # Not on server.
-            use_old = False    # Enable if you want to use the rotcurves from the older, smaller dataset.
-            if use_old==False or not os.path.isfile(fname):
-                fname = rcdir+'diskfit7m/'+self.name.lower()+"_co21_7m_RC_procedural.txt"  # Not on server. Procedural.
-#                print('NOTE: Custom rotcurve not found-- using procedurally-generated rotcurve instead!')
+        if data_mode.lower()=='phangs':
+            fname = rcpath+self.name.lower()+"_co21_12m+7m+tp_RC.txt"
             R, vrot, vrot_e = np.loadtxt(fname,skiprows=True,unpack=True)
         else:
-            raise ValueError("'mode' must be PHANGS, diskfit12m, or diskfit7m!")
+            fname = rcpath+folder+self.name.lower()+"_co21_"+rcmode+"_RC_procedural.txt"
+            fname_b = rcpath+'diskfit_manual_12m/'+self.name.lower()+"_co21_12m+7m_RC.txt"   # Backup data for 12m.
+            if os.path.isfile(fname):
+                R, vrot, vrot_e = np.loadtxt(fname,skiprows=True,unpack=True)
+            elif data_mode=='12m+7m' and os.path.isfile(fname_b):
+                # Backup purposes only! Maybe replace these in the future?
+                print('rotcurve : BACKUP - Reading "'+fname_b+'" instead! (Old manual 12m fits)')
+                R, vrot, vrot_e = np.loadtxt(fname_b,skiprows=True,unpack=True)
+            else:
+                raise ValueError('rotcurve : File not found: '+fname)
 
             
             # R = Radius from center of galaxy, in arcsec.
@@ -380,7 +402,7 @@ class Galaxy(object):
         
         return R, vrot, R_e, vrot_e
 
-    def rotmap(self,header=None, position_angle=None, inclination=None, mode='PHANGS'):
+    def rotmap(self,header=None, position_angle=None, inclination=None,data_mode='',mapmode='mom1'):
         '''
         Returns "observed velocity" map, and "radius
         map".
@@ -396,12 +418,18 @@ class Galaxy(object):
             Override for kinematic PA of the galaxy.
         inclination=None : astropy Quantity
             Override for inclination of the galaxy.
-        mode='PHANGS' : str
-            'PHANGS'     - Uses PHANGS rotcurve.
-            'diskfit12m' - Uses fitted rotcurve from
-                            12m+7m data.        
-            'diskfit7m'  - Uses fitted rotcurve from
-                            7m data.
+        data_mode(='') : str
+            '7m'            - uses 7m data.
+            '12m' (default) - 12m data.
+            'hybrid'        - combines 7m and 12m.
+            'phangs'        - Uses the PHANGS team's
+                                12m+7m rotcurves,
+                                provided on server.
+        mapmode(='mom1') : str
+            'mom1' - uses mom1 map of specified
+                     data_mode.
+            'peakvels' - uses peakvels map of 
+                         specified data_mode.
             
         Returns:
         --------
@@ -413,12 +441,29 @@ class Galaxy(object):
         Dec, RA : np.ndarray
             2D arrays of the ranges of Dec and 
             RA (respectively), in degrees.
-        '''   
+        '''
+        # data_mode, mapmode
+        if mapmode in ['peakvels','vpeak']:
+            mapmode = 'vpeak'
+        if mapmode not in ['vpeak','mom1']:
+            raise ValueError('rotcurve : Invalid mapmode! Should be mom1 or peakvels.')
+        if data_mode == '7m':
+            data_mode = '7m'
+        elif data_mode in ['12m','12m+7m']:
+            data_mode = '12m+7m'
+        elif data_mode.lower() in ['both','hybrid']:
+            data_mode = 'hybrid'  
+        elif data_mode=='':
+            print('rotcurve : No data_mode set. Defaulted to 12m+7m.')
+            data_mode = '12m+7m'
+        elif data_mode=='phangs':
+            print('rotcurve : WARNING: Using old PHANGS 12m+7m rotcurves. Likely outdated!')
+        else:
+            raise ValueError('rotcurve : Invalid data_mode! Should be 7m, 12m, or hybrid.')
+        
         # Basic info
         vsys = self.vsys
-#        if vsys==None:
-#            vsys = self.velocity
-#            # For some reason, some galaxies (M33, NGC4303...) have velocity listed as "velocity" instead of "vsys".
+        
         if not inclination:
             I = self.inclination
         else:
@@ -436,7 +481,7 @@ class Galaxy(object):
         d = (self.distance).to(u.parsec)                 # Distance to galaxy, from Mpc to pc
         
         # vrot Interpolation
-        R_1d, vrot,R_e,vrot_e = self.rotcurve(mode=mode)
+        R_1d, vrot,R_e,vrot_e = self.rotcurve(data_mode=data_mode,mapmode=mapmode)
 
         # Generating displayable grids
         X,Y = self.radius(header=header, returnXY=True)  # Coordinate grid in galaxy plane, as "seen" by telescope,
