@@ -203,6 +203,111 @@ def mom1_get(gal,data_mode='',return_best=False, verbose=True,\
         return I_mom1, best_mom1
     else:
         return I_mom1
+    
+def emom1_get(gal,data_mode='',return_best=False, verbose=True,\
+             path7m ='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-LP/working_data/osu/',\
+             path12m='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-v1p0/',\
+             folder_hybrid='jnofech_mom1_hybrid/'):
+    '''
+    data_mode = '7m','12m','12m+7m'.
+    '''
+    if isinstance(gal,Galaxy):
+        name = gal.name.lower()
+    elif isinstance(gal,str):
+        name = gal.lower()
+    else:
+        raise ValueError("'gal' must be a str or galaxy!")
+    if data_mode == '7m':
+        data_mode = '7m'
+    elif data_mode in ['12m','12m+7m']:
+        data_mode = '12m+7m'  
+    elif data_mode.lower() in ['both','hybrid']:
+        data_mode = 'hybrid'
+    elif data_mode=='':
+        if verbose==True:
+            print('No data_mode set. Defaulted to 12m+7m.')
+        data_mode = '12m+7m'
+
+    # Get the emom1 file. In K km/s.
+    I_emom1     = None
+    I_emom1_7m  = None
+    I_emom1_12m = None
+    if data_mode in ['7m','hybrid']:
+        data_mode_name = '7m'
+        path = path7m
+        filename_7mtp = name+'_'+data_mode_name+'+tp_co21_emom1.fits'    # 7m+tp emom1. Ideal.
+        filename_7m   = name+'_'+data_mode_name+   '_co21_emom1.fits'    # 7m emom1. Less reliable.
+        if os.path.isfile(path+filename_7mtp):
+            I_emom1_7m = fits.open(path+filename_7mtp,mode='update')
+            I_emom1 = I_emom1_7m[0].data
+            best_emom1_7m='7m+tp'   # Keeps track of whether 7m or 7m+tp is available. Returning this is optional.
+        elif os.path.isfile(path+filename_7m):
+            if verbose==True:
+                print('No 7m+tp emom1 found. Using 7m emom1 instead.')
+            I_emom1_7m = fits.open(path+filename_7m,mode='update')
+            I_emom1 = I_emom1_7m[0].data
+            best_emom1_7m='7m'
+        else:
+            best_emom1_7m = 'None'
+        best_emom1 = best_emom1_7m
+    if data_mode in ['12m+7m','hybrid']:
+        data_mode_name = '12m+7m'
+        path = path12m
+        filename_12mtp = name+'_co21_'+data_mode_name+'+tp_emom1.fits'  # (?) Will all the new maps have '+tp'?
+        best_emom1_12m = '12m+7m+tp'                                    # (?) ^
+        best_emom1 = best_emom1_12m
+        if os.path.isfile(path+filename_12mtp):
+            I_emom1_12m = fits.open(path+filename_12mtp,mode='update')
+            I_emom1 = I_emom1_12m[0].data
+        else:
+            print('WARNING: "'+path+filename_12mtp+'" not found!')
+    if data_mode=='hybrid':
+        # Fix both of their headers!
+        for kw in ['CTYPE3', 'CRVAL3', 'CDELT3', 'CRPIX3', 'CUNIT3']:
+            del I_emom1_12m[0].header[kw]
+            del I_emom1_7m[0].header[kw]
+        for i in ['1','2','3']:
+            for j in ['1', '2', '3']:
+                del I_emom1_7m[0].header['PC'+i+'_'+j]
+                del I_emom1_12m[0].header['PC0'+i+'_0'+j]
+        hdr = I_emom1_12m[0].header
+        # Reproject the 7m map to the 12m's dimensions!
+        # Conveniently, the interpolation is also done for us.
+        I_emom1_7m_modify = Projection.from_hdu(I_emom1_7m)
+        I_emom1_7m = I_emom1_7m_modify.reproject(I_emom1_12m[0].header)
+        # Convert to simple np arrays!
+        I_emom1_12m, I_emom1_7m = I_emom1_12m[0].data, I_emom1_7m.value
+        # COMBINE!
+        I_emom1_mask = (np.isfinite(I_emom1_12m) + np.isfinite(I_emom1_7m)).astype('float')
+        I_emom1_mask[I_emom1_mask == 0.0] = np.nan    # np.nan where _neither_ I_emom1_12m nor I_emom1_7m have data.
+        I_emom1_hybrid = np.nan_to_num(I_emom1_12m) + np.isnan(I_emom1_12m)*np.nan_to_num(I_emom1_7m) + I_emom1_mask
+        I_emom1 = I_emom1_hybrid
+        best_emom1 = 'hybrid_'+best_emom1_7m+'&'+best_emom1_12m
+        
+        # SAVE!
+        hdr['BUNIT'] = 'km  s-1 '  # Write this instead of 'KM/S  '.
+        # Save header and data into a .fits file, if specified!
+        hdu      = fits.PrimaryHDU(I_emom1_hybrid,header=hdr)
+        filename = name+'_co21_'+best_emom1+'_emom1.fits'
+        path = path12m+folder_hybrid
+        if os.path.isfile(path+filename)==False:
+            print(path+filename)
+            hdu.writeto(path+filename)
+        else:
+            print('WARNING: Did not write to \''+path+filename+'\', as this file already exists.') 
+    if data_mode not in ['7m','12m+7m','hybrid']:
+        print('WARNING: Invalid data_mode-- No emom1 was found!')
+        I_emom1 = None
+        return I_emom1
+    
+    if I_emom1 is None:
+        if verbose==True:
+            print('WARNING: No emom1 was found!')
+    
+    if return_best==True:
+        return I_emom1, best_emom1
+    else:
+        return I_emom1
 
 def tpeak_get(gal,data_mode='',\
              path7m ='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-LP/working_data/osu/',\
@@ -279,7 +384,7 @@ def noise_get(gal,data_mode='',cube=None,noisypercent=0.15,\
     
     return I_noise
 
-def hdr_get(gal,data_mode='',\
+def hdr_get(gal,data_mode='',dimensions=3,\
              path7m ='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-LP/working_data/osu/',\
              path12m='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-v1p0/'):
     if isinstance(gal,Galaxy):
@@ -291,7 +396,7 @@ def hdr_get(gal,data_mode='',\
     if data_mode == '7m':
         data_mode = '7m'
     elif data_mode in ['12m','12m+7m']:
-        data_mode = '12m+7m'  
+        data_mode = '12m+7m'
     elif data_mode=='':
         print('No data_mode set. Defaulted to 12m+7m.')
         data_mode = '12m+7m'
@@ -301,27 +406,33 @@ def hdr_get(gal,data_mode='',\
     
     # (?) Might be easier to just get the header from a cube slice...
     
-    if data_mode=='7m':
-        path = path7m
-        for filename in [\
-        name+'_'+data_mode+   '_co21_mom0.fits',\
-        name+'_'+data_mode+   '_co21_mom1.fits',\
-        name+'_'+data_mode+   '_co21_tpeak.fits',\
-        name+'_'+data_mode+'+tp_co21_mom0.fits',\
-        name+'_'+data_mode+'+tp_co21_mom1.fits',\
-        name+'_'+data_mode+'+tp_co21_tpeak.fits']:
-            if os.path.isfile(path+filename):
-                hdr = fits.getheader(path+filename)
-                hdr_found = True
-    if data_mode=='12m+7m':
-        path = path12m
-        for filename in [\
-        name+'_co21_'+data_mode+'+tp_mom0.fits',\
-        name+'_co21_'+data_mode+'+tp_mom1.fits',\
-        name+'_co21_'+data_mode+'+tp_tpeak.fits']:
-            if os.path.isfile(path+filename):
-                hdr = fits.getheader(path+filename)
-                hdr_found = True
+    if dimensions==2:
+        if data_mode=='7m':
+            path = path7m
+            for filename in [\
+            name+'_'+data_mode+   '_co21_mom0.fits',\
+            name+'_'+data_mode+   '_co21_mom1.fits',\
+            name+'_'+data_mode+   '_co21_tpeak.fits',\
+            name+'_'+data_mode+'+tp_co21_mom0.fits',\
+            name+'_'+data_mode+'+tp_co21_mom1.fits',\
+            name+'_'+data_mode+'+tp_co21_tpeak.fits']:
+                if os.path.isfile(path+filename):
+                    hdr = fits.getheader(path+filename)
+                    hdr_found = True
+        if data_mode=='12m+7m':
+            path = path12m
+            for filename in [\
+            name+'_co21_'+data_mode+'+tp_mom0.fits',\
+            name+'_co21_'+data_mode+'+tp_mom1.fits',\
+            name+'_co21_'+data_mode+'+tp_tpeak.fits']:
+                if os.path.isfile(path+filename):
+                    hdr = fits.getheader(path+filename)
+                    hdr_found = True
+    elif dimensions==3:
+        cube = cube_get(gal,data_mode,False,path7m,path12m)
+        if cube is not None:
+            hdr = cube.header
+            hdr_found = True
     if hdr_found == False:
         print('WARNING: No header was found!')
         hdr = None
