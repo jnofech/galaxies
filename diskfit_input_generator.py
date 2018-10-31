@@ -207,7 +207,7 @@ def gen_input(name,data_mode='7m',mapmode='mom1',errors=False,errors_exist=False
         data_mode_temp = '12m+7m'
     else:
         data_mode_temp = data_mode
-    hdr, beam, I_mom0, x, x, x, x = tools.info(gal,None,data_mode_temp)
+    hdr, beam, x, I_mom1, x, x, x, x, x = tools.info(gal,None,data_mode_temp)
     I_mom1 = tools.mom1_get(gal,data_mode)
     
     # Initialize!

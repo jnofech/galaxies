@@ -384,7 +384,7 @@ def noise_get(gal,data_mode='',cube=None,noisypercent=0.15,\
     
     return I_noise
 
-def hdr_get(gal,data_mode='',dimensions=3,\
+def hdr_get(gal,data_mode='',dim=3,\
              path7m ='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-LP/working_data/osu/',\
              path12m='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-v1p0/'):
     if isinstance(gal,Galaxy):
@@ -404,35 +404,15 @@ def hdr_get(gal,data_mode='',dimensions=3,\
     hdr = None
     hdr_found = False
     
-    # (?) Might be easier to just get the header from a cube slice...
-    
-    if dimensions==2:
-        if data_mode=='7m':
-            path = path7m
-            for filename in [\
-            name+'_'+data_mode+   '_co21_mom0.fits',\
-            name+'_'+data_mode+   '_co21_mom1.fits',\
-            name+'_'+data_mode+   '_co21_tpeak.fits',\
-            name+'_'+data_mode+'+tp_co21_mom0.fits',\
-            name+'_'+data_mode+'+tp_co21_mom1.fits',\
-            name+'_'+data_mode+'+tp_co21_tpeak.fits']:
-                if os.path.isfile(path+filename):
-                    hdr = fits.getheader(path+filename)
-                    hdr_found = True
-        if data_mode=='12m+7m':
-            path = path12m
-            for filename in [\
-            name+'_co21_'+data_mode+'+tp_mom0.fits',\
-            name+'_co21_'+data_mode+'+tp_mom1.fits',\
-            name+'_co21_'+data_mode+'+tp_tpeak.fits']:
-                if os.path.isfile(path+filename):
-                    hdr = fits.getheader(path+filename)
-                    hdr_found = True
-    elif dimensions==3:
-        cube = cube_get(gal,data_mode,False,path7m,path12m)
-        if cube is not None:
+    cube = cube_get(gal,data_mode,False,path7m,path12m)
+    if cube is not None:
+        if dim in [3,'3d','3D']:
             hdr = cube.header
-            hdr_found = True
+        elif dim in [2,'2d','2D']:
+            hdr = cube[0].header
+        else:
+            raise ValueError ('hdr_get() : Specify number of dimensions!')
+        hdr_found = True
     if hdr_found == False:
         print('WARNING: No header was found!')
         hdr = None
@@ -1324,23 +1304,23 @@ def info(gal,conbeam=None,data_mode='',sfr_band_uv='nuv',sfr_band_ir='w3',sfr_au
     I_mom0 = mom0_get(gal,data_mode)
     I_mom1 = mom1_get(gal,data_mode)
     I_tpeak = tpeak_get(gal,data_mode)
-    hdr = hdr_get(gal,data_mode)
+    hdr = hdr_get(gal,data_mode,dim=2)
     beam = hdr['BMAJ']                       # In degrees.
     beam_arcsec = (beam*u.deg).to(u.arcsec)  # In arcsec. We want this to be LOWER than the SFR map's 7.5"
                                              #    beamwidth (i.e. higher resolution), but this often fails
                                              #    and we need to use 15" SFR maps instead.
     
-    # Fix the headers so WCS doesn't think that they're 3D!
-    hdrcopy = copy.deepcopy(hdr)
-    for kw in ['CTYPE3', 'CRVAL3', 'CDELT3', 'CRPIX3', 'CUNIT3']:
-        del hdrcopy[kw]
-    for i in ['1','2','3']:
-        for j in ['1', '2', '3']:
-            if data_mode=='7m':
-                del hdrcopy['PC'+i+'_'+j]
-            else:
-                del hdrcopy['PC0'+i+'_0'+j]
-    hdr = hdrcopy
+    # Fix the 2D header so WCS doesn't think that it's 3D!
+#     hdrcopy = copy.deepcopy(hdr2d)
+#     for kw in ['CTYPE3', 'CRVAL3', 'CDELT3', 'CRPIX3', 'CUNIT3']:
+#         del hdrcopy[kw]
+#     for i in ['1','2','3']:
+#         for j in ['1', '2', '3']:
+#             if data_mode=='7m':
+#                 del hdrcopy['PC'+i+'_'+j]
+#             else:
+#                 del hdrcopy['PC0'+i+'_0'+j]
+#     hdr = hdrcopy
     
     # Choose appropriate resolution for SFR map, changing 'conbeam' to match it if necessary.
     res='7p5'
@@ -1361,16 +1341,20 @@ def info(gal,conbeam=None,data_mode='',sfr_band_uv='nuv',sfr_band_ir='w3',sfr_au
         if conbeam==7.5*u.arcsec:
             print('(galaxytools.info())     NOTE:    The 15" SFR map was successful! Changing conbeam from 7.5" to 15".')
             conbeam=15.*u.arcsec
-    cube = cube_get(gal,data_mode)
-        
-        
+    # Get cube+mask!
+    cube,bestcube = cube_get(gal,data_mode,return_best=True)
+    mask          = mask_get(gal,data_mode)
+    # Get peakvels!
+    peakvels = peakvels_get(gal,data_mode,cube,mask,True,False,bestcube)
+    
+    
     # CONVOLUTION, if enabled:
     if conbeam!=None:
         hdr,I_mom0, I_tpeak, cube = cube_convolved(gal,conbeam,data_mode) # CONVOLVED moments, with their cube.
         if sfr is not None:
             sfr = convolve_2D(gal,hdr,sfr,conbeam)  # Convolved SFR map.
 
-    return hdr,beam,I_mom0,I_mom1,I_tpeak,cube,sfr
+    return hdr,beam,I_mom0,I_mom1,peakvels,I_tpeak,cube,mask,sfr
     
 def depletion(Sigma=None,sfr=None):
     '''
