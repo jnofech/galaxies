@@ -222,7 +222,7 @@ def gen_input(name,data_mode='7m',mapmode='mom1',errors=False,errors_exist=False
     Dec = skycoord.dec   # 2D map of Dec.
     RA_cen = gal.center_position.ra
     Dec_cen = gal.center_position.dec
-    xcen_1 = I_mom1.shape[1] * (RA_cen - RA.min()).value / (RA.max() - RA.min()).value
+    xcen_1 = I_mom1.shape[1] * (RA.max() - RA_cen).value / (RA.max() - RA.min()).value
     ycen_1 = I_mom1.shape[0] * (Dec_cen - Dec.min()).value / (Dec.max() - Dec.min()).value
     xcen_1 = "{0:4.2f}".format(xcen_1)   # It's a string now.
     ycen_1 = "{0:4.2f}".format(ycen_1)   # It's a string now.
@@ -836,3 +836,107 @@ def read_rotcurve(name,data_mode='7m',iteration=1,\
         return [np.nan]*3
     
     return Rd, vrotd, vrot_ed
+
+def read_all_outputs(gal,mode='params',diskfit_folder='diskfit_procedural/',use_custom=True,verbose=False):
+    '''
+    Reads through all DiskFit outputs in
+    specified folder, and returns either
+    fitted parameters OR fitted rotcurve.
+    
+    Parameters:
+    -----------
+    gal : Galaxy or str
+        Galaxy.
+    mode='params' : str
+        'params'   - returns parameters (xcen,
+                     ycen,PA,eps,incl,vsys).
+        'rotcurve' - returns rotation curve
+                     (R,vrot,vrot_e).
+
+    Returns:
+    --------
+    See "mode" in Parameters.
+    '''
+    if isinstance(gal,Galaxy):
+        name = gal.name.lower()
+    elif isinstance(gal,str):
+        name = gal.lower()
+        gal = tools.galaxy(name)
+    else:
+        raise ValueError("'gal' must be a str or galaxy!")
+    if mode.lower() in ['params','parameters']:
+        mode='params'
+    elif mode.lower() in ['rotcurve','rc','rotationcurve','rotation curve','rotation']:
+        mode='rotcurve'
+    
+    PA_orig   = gal.position_angle
+    incl_orig = gal.inclination
+    vsys_orig = gal.vsys
+    if np.isnan(vsys_orig):
+        print('dig.read_all_outputs : WARNING - gal.vsys is NaN! Taking mean value of 7m mom1 map.')
+        I_mom1 = tools.mom1_get(gal,'7m')
+        vsys_orig = np.nanmean(I_mom1)*u.km/u.s
+
+    # Generate Alterations only!
+    alteration_label = ['PA_altered','eps_altered','coords_altered','vsys_altered','bar_PA_altered',\
+                        'r_w_altered','warp_eps_altered','warp_PA_altered']
+    alteration = [False]*len(alteration_label)
+
+    for j in range(1,5):
+        # Read previous outputs!
+        # If the run fails at an iteration (say, j=3), then the previous (i.e. most recent "good")
+        #    `alteration` will be kept.
+        x,x,x,x,x,x,x,x,x,x,x,x,x,x,x,x,x,x,x,x,x,x\
+        = read_output(name,iteration=j,alteration=alteration,verbose=verbose,\
+                          diskfit_folder=diskfit_folder)
+    # Now, actually read outputs!
+    # Check for custom inputs!
+    for ver in range(0,5):
+        custom_input = checkcustom(name,ver,diskfit_folder)
+        if custom_input==True and use_custom==True:
+            print('plotting : CUSTOM INPUT DETECTED! Reading custom outputs.')
+            break
+        elif custom_input==True and use_custom==False:
+            print('plotting : CUSTOM INPUT DETECTED... but, IGNORE and read procedural outputs instead.')
+            custom_input=False
+            break
+    
+    # Read outputs!
+    iteration=4
+    while True:
+        xcen_out,ycen_out, PA_out, eps_out, incl_out, vsys_out, bar_PA_out, r_w_out, warp_PA_out, warp_eps_out,\
+        xcen_in, ycen_in,  PA_in,  eps_in,  incl_in,  vsys_in,  bar_PA_in,  r_w_in,  warp_PA_in,  warp_eps_in,\
+        alteration, chi2_out = read_output(name,iteration=iteration,alteration=alteration,\
+                                                  custom_input=custom_input,diskfit_folder=diskfit_folder)    
+        if [xcen_out,ycen_out, PA_out, eps_out, incl_out, vsys_out, bar_PA_out, r_w_out, warp_PA_out, warp_eps_out,\
+            xcen_in, ycen_in,  PA_in,  eps_in,  incl_in,  vsys_in,  bar_PA_in,  r_w_in,  warp_PA_in,  warp_eps_in,\
+            alteration, chi2_out] == [np.nan,np.nan,np.nan,np.nan,np.nan,np.nan,np.nan,np.nan,np.nan,np.nan,\
+            np.nan,np.nan,np.nan,np.nan,np.nan,np.nan,np.nan,np.nan,np.nan,np.nan,\
+            alteration,np.nan] and iteration!=0:
+            print('plotting : OUTPUT FILE NOT DETECTED! Reverting to previous output file.')
+            iteration = iteration-1
+        elif iteration==0:
+            print('plotting : NOT A SINGLE OUTPUT FILE DETECTED! Very sad.')
+            break
+        else:
+            break
+    if iteration!=0:
+        print('Output for iteration='+str(iteration)+' successful!')
+    
+    if np.isnan(PA_out):
+        print('WARNING: PA never changed!')
+        PA_out = PA_orig
+    if np.isnan(incl_out):
+        print('WARNING: incl never changed!')
+        incl_out = incl_orig
+    if np.isnan(vsys_out):
+        print('WARNING: vsys never changed!')
+        vsys_out = vsys_orig
+    
+    if mode=='params':
+        return xcen_out,ycen_out, PA_out, eps_out, incl_out, vsys_out
+    elif mode=='rotcurve':
+        # Read rotcurves!
+        Rd, vrotd, vrot_ed = read_rotcurve(name,iteration=iteration,custom_input=custom_input,\
+                                           diskfit_folder=diskfit_folder)
+        return Rd,vrotd,vrot_ed
