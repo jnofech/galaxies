@@ -61,12 +61,18 @@ def filename_get(name,data_mode='7m',mapmode='mom1',\
         elif mapmode=='peakvels':
             path = path7m_mask+folder_vpeak
         data_mode_temp = '7m'
-        filename_7mtp = name+'_'+data_mode_temp+'+tp_co21_'+mapmode+'.fits'    # 7m+tp mom1. Ideal.
-        filename_7m   = name+'_'+data_mode_temp+   '_co21_'+mapmode+'.fits'    # 7m mom1. Less reliable.
+        filename_7mtp   = name+'_'+data_mode_temp+'+tp_co21_'+mapmode+'.fits'    # 7m+tp mom1. Ideal.
+        filename_7mtp_e = name+'_'+data_mode_temp+'+tp_co21_e'+mapmode+'.fits'   # 7m+tp emom1. Ideal.
+        filename_7m     = name+'_'+data_mode_temp+   '_co21_'+mapmode+'.fits'    # 7m mom1. Less reliable.
+        filename_7m_e   = name+'_'+data_mode_temp+   '_co21_e'+mapmode+'.fits'   # 7m emom1. Less reliable.
 #         print(filename_7m)
         if os.path.isfile(path+filename_7mtp):
             filename_map  = filename_7mtp
-            filename_emap = name+'_'+data_mode_temp+'+tp_co21_e'+mapmode+'.fits'
+            if os.path.isfile(path+filename_7mtp_e):
+                filename_emap = filename_7mtp_e
+            else:
+                print('filename_get() WARNING : '+filename_7mtp_e+' not found!')
+                filename_emap = 'None'
             best_map_7m='7m+tp'
         elif os.path.isfile(path+filename_7m):
             filename_map  = filename_7m
@@ -115,6 +121,7 @@ def gen_input(name,data_mode='7m',mapmode='mom1',errors=False,errors_exist=False
               xcen_p=np.nan,ycen_p=np.nan,PA_p=np.nan,eps_p=np.nan,vsys_p=np.nan,\
               alteration=[None]*8,\
               toggle_xcen_over=None,toggle_PA_over=None,toggle_eps_over=None,toggle_vsys_over=None,\
+              customcoords='phil',\
               debug=False,\
               path7m ='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-LP/working_data/osu/',\
               path12m='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-v1p0/',\
@@ -171,7 +178,7 @@ def gen_input(name,data_mode='7m',mapmode='mom1',errors=False,errors_exist=False
         set to.
     '''
     name = name.lower()
-    gal = tools.galaxy(name.upper())
+    gal = tools.galaxy(name.upper(),customcoords=customcoords)
     if name.upper()=='NGC3239':
         raise ValueError('Bad galaxy.')
     if data_mode == '7m':
@@ -382,7 +389,7 @@ def gen_input(name,data_mode='7m',mapmode='mom1',errors=False,errors_exist=False
     text.append("vels                                ")
     text.append("T  F                                ")
     text.append("'"+filename_map+"                  ")
-    if errors_exist==True:
+    if errors_exist==True and filename_emap!='None':
         text.append("'"+filename_emap+"                 ")
     else:
         text.append("None                                ")    # Also emom1.

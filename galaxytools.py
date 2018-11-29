@@ -21,19 +21,32 @@ import rotcurve_tools as rc
 import copy
 import os
 
-def galaxy(name,customPA=True,custominc=True,customcoords=True):
+def galaxy(name,customPA=True,custominc=True,customcoords='phil'):
     '''
     Creates Galaxy object.
     Features kinematic PA and a quick
     bandaid fix for missing 'vsys' values!
+    
+    Parameters:
+    -----------
+    customPA=True : bool
+    custominc=True : bool
+    customcoords=True : bool OR str
+        customcoords='p','phil','philipp':
+        enables Philipp's custom central coords
     '''
     gal = Galaxy(name.upper())
     if customPA==True:
         gal.position_angle  = PA_get(gal)
     if custominc==True:
         gal.inclination     = incl_get(gal)
-    if customcoords==True:
+    if customcoords==True or customcoords=='True' or customcoords=='true':
         gal.center_position = coords_get(gal)
+    elif isinstance(customcoords,str):
+        if customcoords.lower() in ['p','phil','philipp']:
+            gal.center_position = coords_philipp_get(gal)
+        else:
+            print('tools.galaxy() : WARNING: `customcoords` invalid! Disabling custom coordinates. ')        
     
     if gal.vsys is None or np.isnan(gal.vsys):
         I_mom1a = mom1_get(gal,data_mode='12m',verbose=False)
@@ -977,7 +990,65 @@ def peakvels_gen(gal,data_mode='',cube=None,mask=None,quadfit=True,write=False,b
             print('WARNING: Did not write to \''+path+filename+'\', as this file already exists.')    
 
     return peakvels.value
+    
+def wcs_to_pixels(gal,data_mode,RAcen,Deccen):
+    '''
+    Converts WCS central RA/Dec coordinates,
+    in degrees (or u.Quantity form),
+    into pixel coordinates.
+    '''
+    if isinstance(gal,Galaxy):
+        name = gal.name.lower()
+    elif isinstance(gal,str):
+        name = gal.lower()
+        print('New Galaxy object created for '+name+'!')
+        gal = Galaxy(name.upper())
+    else:
+        raise ValueError("'gal' must be a str or galaxy!")
 
+    hdr = hdr_get(gal,data_mode)
+    
+    # Generate xcen, ycen as numbers.
+    skycoord = gal.skycoord_grid(header=hdr)
+    RA  = skycoord.ra.value     # 2D map of RA.
+    Dec = skycoord.dec.value    # 2D map of Dec.
+    
+    if isinstance(RAcen,u.Quantity):
+        RAcen = RAcen.to(u.deg).value
+        Deccen = Deccen.to(u.deg).value
+        
+    xcen = RA.shape[1] * (RA.max() - RAcen) / (RA.max() - RA.min())
+    ycen = RA.shape[0] * (Deccen - Dec.min()) / (Dec.max() - Dec.min())
+    
+    return xcen, ycen
+    
+def pixels_to_wcs(gal,data_mode,xcen,ycen):
+    '''
+    Converts central pixel coordinates
+    into WCS central RA/Dec coordinates,
+    in u.degrees.
+    '''
+    if isinstance(gal,Galaxy):
+        name = gal.name.lower()
+    elif isinstance(gal,str):
+        name = gal.lower()
+        print('New Galaxy object created for '+name+'!')
+        gal = Galaxy(name.upper())
+    else:
+        raise ValueError("'gal' must be a str or galaxy!")
+
+    hdr = hdr_get(gal,data_mode)
+    
+    # Generate xcen, ycen as numbers.
+    skycoord = gal.skycoord_grid(header=hdr)
+    RA  = skycoord.ra.value     # 2D map of RA.
+    Dec = skycoord.dec.value    # 2D map of Dec.
+    
+    
+    RA_cen  = (RA.max()  - xcen*(RA.max()  - RA.min())/RA.shape[1])*u.deg
+    Dec_cen = (Dec.min() + ycen*(Dec.max() - Dec.min())/RA.shape[0])*u.deg
+    
+    return RA_cen, Dec_cen
     
 def PA_get(gal): 
     '''
@@ -1100,6 +1171,9 @@ def incl_get(gal):
     if gal.name.lower()=='ngc1512':
         print('galaxytools.incl_get():  Overwrote inclination with an eyeballed value. May not be accurate!')
         incl = 45.*u.deg
+#    if gal.name.lower()=='ngc4303':
+#        print('galaxytools.incl_get():  Overwrote inclination with EXPERIMENTAL value. May not be accurate!')
+#        incl = 85.*u.deg
     return incl
 
 def coords_get(gal):
@@ -1136,7 +1210,7 @@ def coords_get(gal):
     else:
         raise ValueError("'gal' must be a str or galaxy!")
     
-    # Get incl!
+    # Get coords!
     RA_cen = gal.center_position.ra.value
     Dec_cen = gal.center_position.dec.value
     
@@ -1237,6 +1311,197 @@ def coords_get(gal):
     if gal.name.lower()=='ngc7496':
         RA_cen,Dec_cen = 347.4464952115924,-43.42790798487375
     
+    # Turn into RA, Dec!
+    gal.center_position = SkyCoord(RA_cen,Dec_cen,unit=(u.deg,u.deg), frame='fk5')
+    return gal.center_position
+    
+def coords_philipp_get(gal):
+    '''
+    Gets the central RA and Dec
+    for the indicated galaxy, if 
+    the provided ones look a bit off.
+    NOTE: You'll probably need to
+    save this into the headers as well,
+    along with corresponding pixel
+    coordinates, if you're working with
+    a function that grabs central
+    coords in some way!
+    
+    Parameters:
+    -----------
+    gal : str OR Galaxy
+        Name of galaxy, OR Galaxy
+        object.
+        
+    Returns:
+    --------
+    RA : Quantity (float*u.deg)
+        Right ascension, in degrees.
+    Dec : Quantity (float*u.deg)
+        Declination, in degrees.
+    '''
+    if isinstance(gal,Galaxy):
+        name = gal.name.lower()
+    elif isinstance(gal,str):
+        name = gal.lower()
+        print('New Galaxy object created for '+name+'!')
+        gal = Galaxy(name.upper())
+    else:
+        raise ValueError("'gal' must be a str or galaxy!")
+    
+    # OVERRIDES
+    # Philipp's custom values!
+    if gal.name.lower()=='ic1954':
+        RA_cen,Dec_cen = 52.879709,-51.904862
+    elif gal.name.lower()=='ic5273':
+        RA_cen,Dec_cen = 344.86118,-37.702839
+    elif gal.name.lower()=='ic5332':
+        RA_cen,Dec_cen = 353.61443,-36.10106
+    elif gal.name.lower()=='ngc0628':
+        RA_cen,Dec_cen = 24.173854,15.783643
+    elif gal.name.lower()=='ngc0685':
+        RA_cen,Dec_cen = 26.928451,-52.761977
+    elif gal.name.lower()=='ngc1087':
+        RA_cen,Dec_cen = 41.604919,-0.4987175
+    elif gal.name.lower()=='ngc1097':
+        RA_cen,Dec_cen = 41.578957,-30.274675
+    elif gal.name.lower()=='ngc1300':
+        RA_cen,Dec_cen = 49.920813,-19.411114
+    elif gal.name.lower()=='ngc1317':
+        RA_cen,Dec_cen = 50.68454,-37.10379
+    elif gal.name.lower()=='ngc1365':
+        RA_cen,Dec_cen = 53.401519,-36.140403
+    elif gal.name.lower()=='ngc1385':
+        RA_cen,Dec_cen = 54.369015,-24.501161
+    elif gal.name.lower()=='ngc1433':
+        RA_cen,Dec_cen = 55.506195,-47.221943
+    elif gal.name.lower()=='ngc1511':
+        RA_cen,Dec_cen = 59.902459,-67.633924
+    elif gal.name.lower()=='ngc1512':
+        RA_cen,Dec_cen = 60.975574,-43.348724
+    elif gal.name.lower()=='ngc1546':
+        RA_cen,Dec_cen = 63.651219,-56.060898
+    elif gal.name.lower()=='ngc1559':
+        RA_cen,Dec_cen = 64.40238,-62.783411
+    elif gal.name.lower()=='ngc1566':
+        RA_cen,Dec_cen = 65.00159,-54.938012
+    elif gal.name.lower()=='ngc1637':
+        RA_cen,Dec_cen = 70.367425,-2.8579358
+    elif gal.name.lower()=='ngc1672':
+        RA_cen,Dec_cen = 71.42704,-59.247259
+    elif gal.name.lower()=='ngc1792':
+        RA_cen,Dec_cen = 76.30969,-37.980559
+    elif gal.name.lower()=='ngc1809':
+        RA_cen,Dec_cen = 75.520658,-69.567942
+    elif gal.name.lower()=='ngc2090':
+        RA_cen,Dec_cen = 86.757874,-34.250599
+    elif gal.name.lower()=='ngc2283':
+        RA_cen,Dec_cen = 101.46997,-18.2108
+    elif gal.name.lower()=='ngc2566':
+        RA_cen,Dec_cen = 124.69003,-25.499519
+    elif gal.name.lower()=='ngc2775':
+        RA_cen,Dec_cen = 137.58396,7.0380658
+    elif gal.name.lower()=='ngc2835':
+        RA_cen,Dec_cen = 139.47044,-22.354679
+    elif gal.name.lower()=='ngc2903':
+        RA_cen,Dec_cen = 143.04212,21.500841
+    elif gal.name.lower()=='ngc2997':
+        RA_cen,Dec_cen = 146.41164,-31.19109
+    elif gal.name.lower()=='ngc3059':
+        RA_cen,Dec_cen = 147.534,-73.922194
+    elif gal.name.lower()=='ngc3137':
+        RA_cen,Dec_cen = 152.28116,-29.064301
+    elif gal.name.lower()=='ngc3239':
+        RA_cen,Dec_cen = 156.27756,17.16119
+    elif gal.name.lower()=='ngc3351':
+        RA_cen,Dec_cen = 160.99064,11.70367
+    elif gal.name.lower()=='ngc3507':
+        RA_cen,Dec_cen = 165.85573,18.13552
+    elif gal.name.lower()=='ngc3511':
+        RA_cen,Dec_cen = 165.84921,-23.086713
+    elif gal.name.lower()=='ngc3521':
+        RA_cen,Dec_cen = 166.4524,-0.035948747
+    elif gal.name.lower()=='ngc3596':
+        RA_cen,Dec_cen = 168.77581,14.787066
+    elif gal.name.lower()=='ngc3621':
+        RA_cen,Dec_cen = 169.56792,-32.812599
+    elif gal.name.lower()=='ngc3626':
+        RA_cen,Dec_cen = 170.01588,18.356845
+    elif gal.name.lower()=='ngc3627':
+        RA_cen,Dec_cen = 170.06252,12.9915
+    elif gal.name.lower()=='ngc4207':
+        RA_cen,Dec_cen = 183.87681,9.5849279
+    elif gal.name.lower()=='ngc4254':
+        RA_cen,Dec_cen = 184.7068,14.416412
+    elif gal.name.lower()=='ngc4293':
+        RA_cen,Dec_cen = 185.30346,18.382575
+    elif gal.name.lower()=='ngc4298':
+        RA_cen,Dec_cen = 185.38651,14.60611
+#     elif gal.name.lower()=='ngc4303':
+#         RA_cen,Dec_cen = 185.54241,4.4722827    # New (Bad!)
+    elif gal.name.lower()=='ngc4303':
+        RA_cen,Dec_cen = 185.47888,4.4737438   # Newer (good!)
+#    elif gal.name.lower()=='ngc4303':
+#        RA_cen,Dec_cen = 185.47896,4.47359    # Old (good?)
+    elif gal.name.lower()=='ngc4321':
+        RA_cen,Dec_cen = 185.72886,15.822304
+    elif gal.name.lower()=='ngc4424':
+        RA_cen,Dec_cen = 186.79821,9.4206371
+    elif gal.name.lower()=='ngc4457':
+        RA_cen,Dec_cen = 187.24593,3.5706196
+    elif gal.name.lower()=='ngc4535':
+        RA_cen,Dec_cen = 188.58459,8.1979729
+    elif gal.name.lower()=='ngc4536':
+        RA_cen,Dec_cen = 188.61278,2.1882429
+    elif gal.name.lower()=='ngc4540':
+        RA_cen,Dec_cen = 188.71193,15.551724
+    elif gal.name.lower()=='ngc4548':
+        RA_cen,Dec_cen = 188.86024,14.496331
+    elif gal.name.lower()=='ngc4569':
+        RA_cen,Dec_cen = 189.20759,13.162875
+    elif gal.name.lower()=='ngc4571':
+        RA_cen,Dec_cen = 189.23492,14.217327
+    elif gal.name.lower()=='ngc4579':
+        RA_cen,Dec_cen = 189.43138,11.818217
+    elif gal.name.lower()=='ngc4654':
+        RA_cen,Dec_cen = 190.98575,13.126715
+    elif gal.name.lower()=='ngc4689':
+        RA_cen,Dec_cen = 191.9399,13.762724
+    elif gal.name.lower()=='ngc4694':
+        RA_cen,Dec_cen = 192.0627,10.983726
+    elif gal.name.lower()=='ngc4731':
+        RA_cen,Dec_cen = 192.75504,-6.3928396
+    elif gal.name.lower()=='ngc4781':
+        RA_cen,Dec_cen = 193.59916,-10.537116
+    elif gal.name.lower()=='ngc4826':
+        RA_cen,Dec_cen = 194.18184,21.683083
+    elif gal.name.lower()=='ngc4941':
+        RA_cen,Dec_cen = 196.05461,-5.5515362
+    elif gal.name.lower()=='ngc4951':
+        RA_cen,Dec_cen = 196.28213,-6.4938237
+    elif gal.name.lower()=='ngc5042':
+        RA_cen,Dec_cen = 198.8792,-23.983883
+    elif gal.name.lower()=='ngc5068':
+        RA_cen,Dec_cen = 199.72808,-21.038744
+    elif gal.name.lower()=='ngc5128':
+        RA_cen,Dec_cen = 201.35869,-43.016082
+    elif gal.name.lower()=='ngc5134':
+        RA_cen,Dec_cen = 201.32726,-21.134195
+    elif gal.name.lower()=='ngc5248':
+        RA_cen,Dec_cen = 204.38336,8.8851946
+    elif gal.name.lower()=='ngc5530':
+        RA_cen,Dec_cen = 214.6138,-43.38826
+    elif gal.name.lower()=='ngc5643':
+        RA_cen,Dec_cen = 218.16991,-44.17461
+    elif gal.name.lower()=='ngc6300':
+        RA_cen,Dec_cen = 259.2478,-62.820549
+    elif gal.name.lower()=='ngc6744':
+        RA_cen,Dec_cen = 287.44208,-63.85754
+    elif gal.name.lower()=='ngc7456':
+        RA_cen,Dec_cen = 345.54306,-39.569412
+    elif gal.name.lower()=='ngc7496':
+        RA_cen,Dec_cen = 347.44703,-43.427849
+
     # Turn into RA, Dec!
     gal.center_position = SkyCoord(RA_cen,Dec_cen,unit=(u.deg,u.deg), frame='fk5')
     return gal.center_position

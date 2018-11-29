@@ -141,7 +141,7 @@ def rotcurve(gal,data_mode='',mapmode='mom1',\
     
     return R, vrot, R_e, vrot_e
     
-def rotcurve_smooth(R,vrot,R_e,vrot_e=None,smooth='spline',knots=8):
+def rotcurve_smooth(R,vrot,R_e,vrot_e=None,smooth='spline',knots=8,returnparams=False):
     '''
     Takes a provided rotation curve
     and smooths it based on one of
@@ -168,6 +168,13 @@ def rotcurve_smooth(R,vrot,R_e,vrot_e=None,smooth='spline',knots=8):
     knots=8 : int
         Number of internal knots in BSpline of
         vrot, if smooth=='spline'.
+    returnparams=False : bool
+        Returns RC fit parameters based on the
+        model.
+        smooth='spline' : none           (0)
+        smooth='brandt' : vmax,rmax,n    (3)
+        smooth='universal' : vmax,rmax,A (3)
+        smooth='simple' : vflat,rflat    (2)
         
         
     Returns:
@@ -183,11 +190,14 @@ def rotcurve_smooth(R,vrot,R_e,vrot_e=None,smooth='spline',knots=8):
         return [np.nan]*2
     
     # Check if any error values are exactly zero
-    if vrot_e is not None:
-        if vrot_e[vrot_e==0].size>0:
-            print('WARNING (rotcurve_tools.rotcurve_smooth) : \
-            vrot_e has at least one value that is exactly zero. Will change to 1e-9.')
-            vrot_e[vrot_e==0] = 1e-9
+    if vrot_e is None:
+        print('WARNING (rotcurve_tools.rotcurve_smooth) : \
+        vrot_e not defined, so all values are assumed to be zero.')
+        vrot_e = np.zeros(R_e.size)
+    if vrot_e[vrot_e==0].size>0:
+        print('WARNING (rotcurve_tools.rotcurve_smooth) : \
+        vrot_e has at least one value that is exactly zero. Will change to 1e-9.')
+        vrot_e[vrot_e==0] = 1e-9
         
     # SMOOTHING:
     if smooth==None or smooth.lower()=='none':
@@ -196,64 +206,113 @@ def rotcurve_smooth(R,vrot,R_e,vrot_e=None,smooth='spline',knots=8):
         # BSpline of vrot(R)
         vrot = bspline(R,vrot(R),knots=knots,lowclamp=False)
     elif smooth.lower()=='brandt':
-        def vcirc_brandt(r, *pars):
+        def brandt(R, p0, p1, p2):
             '''
-            Fit Eq. 5 from Meidt+08 (Eq. 1 Faber & Gallagher 79).
-            This is taken right out of Eric Koch's code.
+            Fit Eq. 1 Faber & Gallagher 79.
+            This is taken right out of Erik Rosolowsky's code.
             '''
-            n, vmax, rmax = pars
-            numer = vmax * (r / rmax)
-            denom = np.power((1 / 3.) + (2 / 3.) *\
-                    np.power(r / rmax, n), (3 / (2 * n)))
-            return numer / denom
-        params, params_covariance = optimize.curve_fit(\
-                                        vcirc_brandt,R_e,vrot(R_e),p0=(1,1,1),sigma=vrot_e,\
-                                        bounds=((0.5,0,0),(np.inf,np.inf,np.inf)))
-        print( "n,vmax,rmax = "+str(params))
-        vrot_b = vcirc_brandt(R,params[0],params[1],params[2])  # Array.
-
+            p = np.array([p0, p1, p2])
+            x = R / p[1]
+            vmodel = p[0] * (x / (1 / 3 + 2 / 3 * x**p[2]))**(1 / (2 * p[2]))
+            return(vmodel)
+        def gof_brandt(p, radius=None, vrot=None, verr=None):
+            vmodel = brandt(radius, *p)
+            gof = np.abs((vmodel - vrot) / (verr))
+            return(gof)
+        p = np.zeros(3)
+        p[0] = np.median(vrot(R_e))
+        p[1] = np.max(R_e/1000.) / 2
+        p[2] = 1
+        output = optimize.least_squares(gof_brandt, p, loss='soft_l1',
+                                        kwargs={'radius': R_e/1000.,
+                                                'vrot': vrot(R_e),
+                                                'verr': vrot_e},
+                                        max_nfev=1e6,
+                                        bounds=((0.01,0,0),(np.inf,np.inf,np.inf)))
+        n_brandt = output.x[2]
+        rmax_brandt = output.x[1]*1000.
+        vmax_brandt = output.x[0]
+        vrot_b = brandt(R,vmax_brandt,rmax_brandt,n_brandt)   # Array.
         # BSpline interpolation of vrot_b(R)
         K=3                # Order of the BSpline
         t,c,k = interpolate.splrep(R,vrot_b,s=0,k=K)
         vrot = interpolate.BSpline(t,c,k, extrapolate=False)  # Now it's a function.
+        if returnparams==True:
+            return R,vrot,vmax_brandt,rmax_brandt,n_brandt
+        else:
+            return R,vrot
     elif smooth.lower()=='universal':
-        def vcirc_universal(r, *pars):
+        def urc(R, p0, p1, p2):
             '''
             Fit Eq. 14 from Persic & Salucci 1995.
             '''
-            v0, a, rmax = pars
-            x = (r / rmax)
-            return v0*np.sqrt( (0.72+0.44*np.log10(a))*(1.97*x**1.22)/(x**2 + 0.78**2)**1.43 +
-                       1.6*np.exp(-0.4*a)*x**2/(x**2 + 1.5**2 *a**0.4) )
-            
-        params, params_covariance = optimize.curve_fit(\
-                                        vcirc_universal,R_e,vrot(R_e),p0=(1,1,600),sigma=vrot_e,\
-                                        bounds=((0,0.01,0.01),(np.inf,np.inf,np.inf)))
-        print( "v0,a,rmax = "+str(params))
-        vrot_u = vcirc_universal(R,params[0],params[1],params[2])  # Array.
-
+            p = np.array([p0, p1, p2])
+            x = R / p[1]
+            vmodel = p[0] * ((0.72 + 0.44 * np.log(p[2]))
+                             * (1.95 * x**1.22)/(x**2 + 0.78**2)
+                             + 1.6 * np.exp(-0.4 * p[2])
+                             * (x**2/(x**2 + 1.5**2 * p[2]**2)))
+#             print(p[0],p[1],p[2])
+            return(vmodel)
+        def gof_urc(p, radius=None, vrot=None, verr=None):
+            vmodel = urc(radius, *p)
+            gof = np.abs((vmodel - vrot) / (verr))
+            return(gof)
+        p = np.zeros(3)
+        p[0] = np.median(vrot(R_e))
+        p[1] = np.max(R_e/1000.) / 2
+        p[2] = 1
+        output = optimize.least_squares(gof_urc, p, loss='soft_l1',
+                                        kwargs={'radius': R_e/1000.,
+                                                'vrot': vrot(R_e),
+                                                'verr': vrot_e},
+                                        max_nfev=1e6,
+                                        bounds=((0.01,0,0),(np.inf,np.inf,np.inf)))
+        A_urc = output.x[2]
+        rmax_urc = output.x[1]*1000
+        vmax_urc = output.x[0]
+        vrot_u = urc(R,vmax_urc,rmax_urc,A_urc)   # Array.
         # BSpline interpolation of vrot_u(R)
         K=3                # Order of the BSpline
         t,c,k = interpolate.splrep(R,vrot_u,s=0,k=K)
         vrot = interpolate.BSpline(t,c,k, extrapolate=False)  # Now it's a function.
-    elif smooth.lower() in ['simple','exponential','expo']:
-        def vcirc_simple(r, *pars):
+        if returnparams==True:
+            return R,vrot,vmax_urc,rmax_urc,A_urc
+        else:
+            return R,vrot
+    elif smooth.lower() in ['simple','simp','exponential','expo','exp']:
+        def simple(R, p0, p1):
             '''
             Fit Eq. 8 from Leroy et al. 2013.
             '''
-            vflat, rflat = pars
-            return vflat*(1.0-np.exp(-r / rflat))
-            
-        params, params_covariance = optimize.curve_fit(\
-                                        vcirc_simple,R_e,vrot(R_e),p0=(1,1000),sigma=vrot_e,\
-                                        bounds=((0,0.01),(np.inf,np.inf)))
-        print( "vflat,rflat = "+str(params))
-        vrot_s = vcirc_simple(R,params[0],params[1])  # Array.
-
+            p = np.array([p0, p1])
+            x = R / p[1]
+            vmodel = p[0]*(1.0-np.exp(-x))
+#             print(p0,p1)
+            return(vmodel)
+        def gof_simple(p, radius=None, vrot=None, verr=None):
+            vmodel = simple(radius, *p)
+            gof = np.abs((vmodel - vrot) / (verr))
+            return(gof)
+        p = np.zeros(2)
+        p[0] = np.median(vrot(R_e))
+        p[1] = np.max(R_e/1000) / 2
+        output = optimize.least_squares(gof_simple, p, loss='soft_l1',
+                                        kwargs={'radius': R_e/1000,
+                                                'vrot': vrot(R_e),
+                                                'verr': vrot_e},
+                                        max_nfev=1e6)
+        rflat_simple = output.x[1]*1000
+        vflat_simple = output.x[0]
+        vrot_s = simple(R,vflat_simple,rflat_simple)   # Array.
         # BSpline interpolation of vrot_u(R)
         K=3                # Order of the BSpline
         t,c,k = interpolate.splrep(R,vrot_s,s=0,k=K)
         vrot = interpolate.BSpline(t,c,k, extrapolate=False)  # Now it's a function.
+        if returnparams==True:
+            return R,vrot,vflat_simple,rflat_simple
+        else:
+            return R,vrot
     else:
         raise ValueError('Invalid smoothing mode.')
     
