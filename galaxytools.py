@@ -20,6 +20,7 @@ import rotcurve_tools as rc
 
 import copy
 import os
+import csv
 
 def galaxy(name,customPA=True,custominc=True,customcoords='phil'):
     '''
@@ -1137,7 +1138,7 @@ def PA_get(gal):
     
 def incl_get(gal):
     '''
-    Gets the inclination PA for the
+    Gets the inclination for the
     indicated galaxy, if the provided
     one happens to look a bit off.
     (Basically, just NGC1512 for now.)
@@ -1171,9 +1172,12 @@ def incl_get(gal):
     if gal.name.lower()=='ngc1512':
         print('galaxytools.incl_get():  Overwrote inclination with an eyeballed value. May not be accurate!')
         incl = 45.*u.deg
-#    if gal.name.lower()=='ngc4303':
-#        print('galaxytools.incl_get():  Overwrote inclination with EXPERIMENTAL value. May not be accurate!')
-#        incl = 85.*u.deg
+    if gal.name.lower()=='ngc1672':
+        print('galaxytools.incl_get(): Using FAKE inclination value, for DiskFit! REMOVE LATER?')
+        incl = 50.*u.deg
+    if gal.name.lower()=='ngc3059':
+        print('galaxytools.incl_get(): Using FAKE inclination value, for DiskFit! REMOVE LATER?')
+        incl = 20.*u.deg
     return incl
 
 def coords_get(gal):
@@ -1505,7 +1509,318 @@ def coords_philipp_get(gal):
     # Turn into RA, Dec!
     gal.center_position = SkyCoord(RA_cen,Dec_cen,unit=(u.deg,u.deg), frame='fk5')
     return gal.center_position
+    
+def logmass_get(gal=None,path='/media/jnofech/BigData/galaxies/',fname='phangs_sample_table'):
+    '''
+    Returns log10(*Stellar* mass / Msun)
+    for the specified galaxy, OR
+    for every galaxy in 
+    galaxies_list if a galaxy is not
+    specified.
+    
+    Parameters:
+    -----------
+    gal=None : int or Galaxy
+        Galaxy object.
+    
+    Returns:
+    --------
+    logmstar : float or array
+        All galaxy masses corresponding
+        to `galaxy_list`, OR the
+        mass of the single galaxy specified.
+    '''
+    table = fits.open(path+fname+'.fits')[1].data
 
+    if isinstance(gal,Galaxy):
+        name = gal.name.lower()
+    elif isinstance(gal,str):
+        name = gal.lower()
+    elif gal is None:
+        print('tools.get_logmstar() : No galaxy selected! Returning entire array of galaxy masses.')
+        logmasses = np.zeros(len(galaxies_list))
+        for i in range(0,len(galaxies_list)):
+            name = galaxies_list[i]
+            logmasses[i] = table.field('LOGMSTAR')[list(table.field('NAME')).index(name)]
+        return logmasses
+    else:
+        raise ValueError("'gal' must be a str or galaxy!")
+    
+    logmass = table.field('LOGMSTAR')[list(table.field('NAME')).index(name.upper())]
+    return logmass
+
+def TFvelocity_get(gal):
+    '''
+    Returns predicted Tully-
+    Fisher velocity (not-projected)
+    for the specified galaxy.
+    
+    Parameters:
+    -----------
+    gal : int or Galaxy
+        Galaxy object.
+    
+    Returns:
+    --------
+    TFv : Quantity
+        Approximate rotational velocity
+        of galaxy.
+    '''
+    if isinstance(gal,Galaxy):
+        name = gal.name.lower()
+    elif isinstance(gal,str):
+        name = gal.lower()
+    else:
+        raise ValueError("'gal' must be a str or galaxy!")
+
+    if name.lower()=='ic1954':
+        TFv = 129.3896852*u.km/u.s
+    if name.lower()=='ic5273':
+        TFv = 126.183459*u.km/u.s
+    if name.lower()=='ic5332':
+        TFv = 122.6781319*u.km/u.s
+    if name.lower()=='ngc0628':
+        TFv = 166.1088534*u.km/u.s
+    if name.lower()=='ngc0685':
+        TFv = 131.2281377*u.km/u.s
+    if name.lower()=='ngc1087':
+        TFv = 129.6414964*u.km/u.s
+    if name.lower()=='ngc1097':
+        TFv = 211.1742643*u.km/u.s
+    if name.lower()=='ngc1300':
+        TFv = 211.7199579*u.km/u.s
+    if name.lower()=='ngc1317':
+        TFv = 182.5707277*u.km/u.s
+    if name.lower()=='ngc1365':
+        TFv = 223.2490649*u.km/u.s
+    if name.lower()=='ngc1385':
+        TFv = 157.4249651*u.km/u.s
+    if name.lower()=='ngc1433':
+        TFv = 198.1045651*u.km/u.s
+    if name.lower()=='ngc1511':
+        TFv = 140.4395746*u.km/u.s
+    if name.lower()=='ngc1512':
+        TFv = 187.8490435*u.km/u.s
+    if name.lower()=='ngc1546':
+        TFv = 163.1179861*u.km/u.s
+    if name.lower()=='ngc1559':
+        TFv = 135.9387902*u.km/u.s
+    if name.lower()=='ngc1566':
+        TFv = 205.4559423*u.km/u.s
+    if name.lower()=='ngc1637':
+        TFv = 127.155985*u.km/u.s
+    if name.lower()=='ngc1672':
+        TFv = 168.2787683*u.km/u.s
+    if name.lower()=='ngc1792':
+        TFv = 168.0101957*u.km/u.s
+    if name.lower()=='ngc1809':
+        TFv = 140.5480859*u.km/u.s
+    if name.lower()=='ngc2090':
+        TFv = 144.4697148*u.km/u.s
+    if name.lower()=='ngc2283':
+        TFv = 139.2615752*u.km/u.s
+    if name.lower()=='ngc2566':
+        TFv = 193.6596487*u.km/u.s
+    if name.lower()=='ngc2775':
+        TFv = 206.0931337*u.km/u.s
+    if name.lower()=='ngc2835':
+        TFv = 133.6302972*u.km/u.s
+    if name.lower()=='ngc2903':
+        TFv = 178.6525867*u.km/u.s
+    if name.lower()=='ngc2997':
+        TFv = 185.2073733*u.km/u.s
+    if name.lower()=='ngc3059':
+        TFv = 171.4108286*u.km/u.s
+    if name.lower()=='ngc3137':
+        TFv = 130.6415472*u.km/u.s
+    if name.lower()=='ngc3239':
+        TFv = 131.6274418*u.km/u.s
+    if name.lower()=='ngc3351':
+        TFv = 168.9887324*u.km/u.s
+    if name.lower()=='ngc3507':
+        TFv = 175.4601676*u.km/u.s
+    if name.lower()=='ngc3511':
+        TFv = 124.2545764*u.km/u.s
+    if name.lower()=='ngc3521':
+        TFv = 207.0739332*u.km/u.s
+    if name.lower()=='ngc3596':
+        TFv = 110.4244053*u.km/u.s
+    if name.lower()=='ngc3621':
+        TFv = 182.3324516*u.km/u.s
+    if name.lower()=='ngc3626':
+        TFv = 173.2528181*u.km/u.s
+    if name.lower()=='ngc3627':
+        TFv = 188.9890834*u.km/u.s
+    if name.lower()=='ngc4207':
+        TFv = 120.7242452*u.km/u.s
+    if name.lower()=='ngc4254':
+        TFv = 184.2006293*u.km/u.s
+    if name.lower()=='ngc4293':
+        TFv = 180.4140181*u.km/u.s
+    if name.lower()=='ngc4298':
+        TFv = 144.8225231*u.km/u.s
+    if name.lower()=='ngc4303':
+        TFv = 198.5801286*u.km/u.s
+    if name.lower()=='ngc4321':
+        TFv = 200.0481604*u.km/u.s
+    if name.lower()=='ngc4424':
+        TFv = 92.35864869*u.km/u.s
+    if name.lower()=='ngc4457':
+        TFv = 170.2458161*u.km/u.s
+    if name.lower()=='ngc4535':
+        TFv = 184.7751102*u.km/u.s
+    if name.lower()=='ngc4536':
+        TFv = 165.5247113*u.km/u.s
+    if name.lower()=='ngc4540':
+        TFv = 125.7450402*u.km/u.s
+    if name.lower()=='ngc4548':
+        TFv = 194.1613802*u.km/u.s
+    if name.lower()=='ngc4569':
+        TFv = 214.7993831*u.km/u.s
+    if name.lower()=='ngc4571':
+        TFv = 143.2840114*u.km/u.s
+    if name.lower()=='ngc4579':
+        TFv = 220.2774839*u.km/u.s
+    if name.lower()=='ngc4654':
+        TFv = 163.3954767*u.km/u.s
+    if name.lower()=='ngc4689':
+        TFv = 157.0624416*u.km/u.s
+    if name.lower()=='ngc4694':
+        TFv = 130.9081556*u.km/u.s
+    if name.lower()=='ngc4731':
+        TFv = 113.1246446*u.km/u.s
+    if name.lower()=='ngc4781':
+        TFv = 134.678573*u.km/u.s
+    if name.lower()=='ngc4826':
+        TFv = 154.4822491*u.km/u.s
+    if name.lower()=='ngc4941':
+        TFv = 146.7452837*u.km/u.s
+    if name.lower()=='ngc4951':
+        TFv = 115.4472648*u.km/u.s
+    if name.lower()=='ngc5042':
+        TFv = 115.9642888*u.km/u.s
+    if name.lower()=='ngc5068':
+        TFv = 107.0286549*u.km/u.s
+    if name.lower()=='ngc5128':
+        TFv = 223.8369277*u.km/u.s
+    if name.lower()=='ngc5134':
+        TFv = 164.5652803*u.km/u.s
+    if name.lower()=='ngc5248':
+        TFv = 157.5482845*u.km/u.s
+    if name.lower()=='ngc5530':
+        TFv = 149.1771141*u.km/u.s
+    if name.lower()=='ngc5643':
+        TFv = 170.2398255*u.km/u.s
+    if name.lower()=='ngc6300':
+        TFv = 184.7512441*u.km/u.s
+    if name.lower()=='ngc6744':
+        TFv = 237.2941833*u.km/u.s
+    if name.lower()=='ngc7456':
+        TFv = 90.10775682*u.km/u.s
+    if name.lower()=='ngc7496':
+        TFv = 144.3432589*u.km/u.s
+    
+    return TFv
+
+def bar_info_get(gal,data_mode,radii='arcsec',customPA=True,\
+                 folder='drive_tables/',fname='TABLE_Environmental_masks - Parameters'):
+    '''
+    Gets the bar information for a specified
+    galaxy. Table must be a .csv file!
+    
+    Parameters:
+    -----------
+    gal : Galaxy
+        Galaxy.
+    data_mode : str
+        Data mode (7m or 12m) of
+        galaxy, for converting
+        radius units.
+    radii : str
+        Unit that the bar radius
+        is returned in.
+        'arcsec' (Default)
+        'pc', 'parsec'
+        'pix', 'pixel', 'pixels'  <- Dependent on data_mode
+    Returns:
+    --------
+    bar_PA : Quantity
+        PA of bar, in degrees.
+    bar_incl : Quantity
+        Inclination of bar, in degrees.
+    bar_R : Quantity
+        Radius of bar, in parsec.
+    
+    Will return 'None, None, None' if
+    galaxy does not have a bar.
+    '''
+    if isinstance(gal,Galaxy):
+        name = gal.name.lower()
+    elif isinstance(gal,str):
+        name = gal.lower()
+        print('New Galaxy object created for '+name+'!')
+        gal = Galaxy(name.upper())
+    else:
+        raise ValueError("'gal' must be a str or galaxy!")
+
+    hdr = hdr_get(gal,data_mode)
+
+    with open(folder+fname+'.csv', 'r') as csvfile:
+        reader = csv.reader(csvfile)
+        table = [[r] for r in reader]
+    for i in range(0,len(table)):
+        table[i] = table[i][0]          # Cleans up the table into a proper 2D list.
+
+    bar_index = table[0].index('-------------------------- bar ---------------------------')
+    # If galaxy is in table, find ratio+PA+R!
+    if name.upper() in np.array(table)[:,0]:
+        row = np.where(np.array(table)[:,0] == name.upper())[0][0]
+        bar_axisratio, bar_PA, bar_R = table[row][bar_index:(bar_index+3)]
+        # Abort if there's no bar.
+        if '-999' in [bar_axisratio,bar_PA,bar_R]:
+            print('tools.bar_info_get() : '+name.upper()+' does not have a bar!')
+            return np.nan, np.nan, np.nan
+        bar_axisratio = float(bar_axisratio)   # Axis ratio == a/b == 1/cos(i)
+        bar_incl = (np.arccos(1./bar_axisratio)*u.rad).to(u.deg)     # (!!!) Delete this later. Bars don't have inclinations, ya donut
+        bar_PA = float(bar_PA)*u.deg           # PA (deg)
+        bar_R = float(bar_R)*u.arcsec          # R (arcsec)
+        # Custom PA values!
+#        if customPA==True:
+#            # a) Bar PA is off by 180 degrees.
+#            galaxies_180=['IC5273','NGC1300','NGC1365','NGC1385','NGC1511','NGC1512','NGC1559',\
+#                          'NGC4535','NGC4731','NGC4781','NGC4826','NGC5042','NGC5134','NGC5530']
+#            raise ValueError('tools.bar_info_get() : Custom bar PAs not decided!!')
+#            if name.upper() in galaxies_180:
+#                if PA.value>180.:
+#                    bar_PA = bar_PA-180.*u.deg
+#                else:
+#                    bar_PA = bar_PA+180.*u.deg
+#            # b) Bar PA for galaxies whose photometric PAs are just WAY off from kinematic PAs. (Hopefully none!)
+#            if gal.name.lower()=='ngcXXXX':
+#                bar_PA = 999.*u.deg
+    else:
+        print('tools.bar_info_get() : '+name.upper()+' not in '+fname+'.csv!')
+        return np.nan, np.nan, np.nan
+
+    # Convert R to desired units!
+    if radii=='arcsec':
+        bar_R = bar_R            # Bar radius, in ".
+    else:
+        pixsizes_deg = wcs.utils.proj_plane_pixel_scales(wcs.WCS(hdr))[0]*u.deg # Pixel width, in deg.
+        pixsizes_arcsec = pixsizes_deg.to(u.arcsec)                             # Pixel width, in arcsec.
+        pixsizes_rad = pixsizes_deg.to(u.rad)                                   # Pixel width, in radians.
+        bar_R_pix = bar_R / pixsizes_arcsec                                     # Bar radius, in pixels.
+        if radii in ['parsec','pc']:
+            pcperpixel = pixsizes_rad.value*gal.distance.to(u.pc)    # Pixel width, in pc.
+            bar_R = bar_R_pix * pcperpixel        # Bar radius, in pc.
+        elif radii in ['kpc']:
+            kpcperpixel = pixsizes_rad.value*gal.distance.to(u.kpc)    # Pixel width, in kpc.
+            bar_R = bar_R_pix * kpcperpixel       # Bar radius, in kpc.
+        elif radii in ['pix','pixel','pixels']:
+            bar_R = bar_R_pix                     # Bar radius, in pixels.
+
+    return bar_PA, bar_incl, bar_R
+   
 def info(gal,conbeam=None,data_mode='',sfr_band_uv='nuv',sfr_band_ir='w3',sfr_autocorrect=False):
     '''
     Returns basic info from galaxies.

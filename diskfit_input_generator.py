@@ -25,6 +25,18 @@ import subprocess
 import rotcurve_tools as rc
 import galaxytools as tools
 
+# Import silencer
+import os, sys
+class silence:
+    def __enter__(self):
+        self._original_stdout = sys.stdout
+        sys.stdout = open(os.devnull, 'w')
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        sys.stdout.close()
+        sys.stdout = self._original_stdout
+#with silence():
+#    print("This will not be printed")
+
 def filename_get(name,data_mode='7m',mapmode='mom1',\
                 path7m ='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-LP/working_data/osu/',\
                 path12m='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-v1p0/',\
@@ -108,7 +120,7 @@ def filename_get(name,data_mode='7m',mapmode='mom1',\
             path = path12m_mask+folder_vpeak
         if os.path.isfile(path+filename):
             filename_map  = filename
-            filename_emap = name+'_co21_'+best_map+'+_e'+mapmode+'.fits'
+            filename_emap = name+'_co21_'+best_map+'_e'+mapmode+'.fits'
         else:
             filename_map  = "Hybrid "+mapmode+" MISSING!"
             filename_emap = "Hybrid "+mapmode+" MISSING!"
@@ -117,12 +129,16 @@ def filename_get(name,data_mode='7m',mapmode='mom1',\
     return filename_map, filename_emap
 
 def gen_input(name,data_mode='7m',mapmode='mom1',errors=False,errors_exist=False,iteration=1,  \
-              xcen  =np.nan,ycen  =np.nan,PA  =np.nan,eps  =np.nan,vsys  =np.nan,\
-              xcen_p=np.nan,ycen_p=np.nan,PA_p=np.nan,eps_p=np.nan,vsys_p=np.nan,\
+#              xcen  =np.nan,ycen  =np.nan,PA  =np.nan,eps  =np.nan,vsys  =np.nan,\
+#              xcen_p=np.nan,ycen_p=np.nan,PA_p=np.nan,eps_p=np.nan,vsys_p=np.nan,\
+              xcen  =np.nan,ycen  =np.nan,PA  =np.nan,eps  =np.nan,vsys  =np.nan,bar_PA  =np.nan,\
+              xcen_p=np.nan,ycen_p=np.nan,PA_p=np.nan,eps_p=np.nan,vsys_p=np.nan,bar_PA_p=np.nan,\
               alteration=[None]*8,\
               toggle_xcen_over=None,toggle_PA_over=None,toggle_eps_over=None,toggle_vsys_over=None,\
+              toggle_bar_PA_over=None,\
               customcoords='phil',\
               debug=False,\
+              bar_fit_try=True,\
               path7m ='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-LP/working_data/osu/',\
               path12m='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-v1p0/',\
               path7m_mask ='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-LP/working_data/osu/eros_masks/',\
@@ -243,11 +259,22 @@ def gen_input(name,data_mode='7m',mapmode='mom1',errors=False,errors_exist=False
     delta_ISM = str((6.0*u.km/u.s).value)                              # "Doesn't change much to my knowledge."
     
     # Get PA, Eps, Vsys
-    PA_temp = gal.position_angle
-    PA_1 = "{0:4.2f}".format(PA_temp.value)
+    PA_1 = "{0:4.2f}".format(gal.position_angle.value)
     eps_1 = "{0:4.2f}".format(1.0 - np.cos(gal.inclination))
     vsys_1 = "{0:4.2f}".format(gal.vsys.value)
     
+    # Bars!
+    bar_PA_1, bar_incl_1, bar_R = tools.bar_info_get(gal,data_mode,radii='pixels',folder='/media/jnofech/BigData/galaxies/drive_tables/')       # Returns bar radii in pixels.
+    if bar_PA_1 is not np.nan and bar_fit_try==True:
+        has_bar = 'T'
+        toggle_bar_PA = 'T'
+        bar_eps_1 = 1.-np.cos(bar_incl_1)                              # Unused? I guess diskfit doesn't care about bar eps?
+        bar_PA_1 = "{0:4.2f}".format(bar_PA_1.value)
+    else:
+        has_bar = 'F'
+        toggle_bar_PA = 'F'
+        bar_PA_1 = "{0:4.2f}".format((45.0*u.deg).value)
+        bar_R = 45
     
     # Default toggles!
     if errors==True:
@@ -271,6 +298,10 @@ def gen_input(name,data_mode='7m',mapmode='mom1',errors=False,errors_exist=False
         eps_1 = "{0:4.2f}".format(eps_p)
     if ~np.isnan(vsys_p):
         vsys_1 = "{0:4.2f}".format(vsys_p.value)
+    if ~np.isnan(bar_PA_p):
+        print('!!! DEBUG! '+str(bar_PA_p))
+        print('!!! DEBUG! '+str(bar_PA_1))
+        bar_PA_1 = "{0:4.2f}".format(bar_PA_p.value)
     
     # Toggle parameter-fitting!
     # Enable if a good fit has not been found.
@@ -339,48 +370,145 @@ def gen_input(name,data_mode='7m',mapmode='mom1',errors=False,errors_exist=False
                 print(name+' : Disabled vsys toggle!')
             toggle_vsys = 'F'
             vsys_1 = vsys
+    if ~np.isnan(bar_PA):
+        bar_PA = "{0:4.2f}".format(bar_PA.value)
+        # Check for bogus results.
+        if alteration[alteration_label.index('bar_PA_altered')]==False:
+            toggle_bar_PA = 'T'
+        else:
+            if float(bar_PA_1)!=float(bar_PA):
+            # If the current and previous values are the same, prevent redundant printing.
+                print(name+'\'s bar_PA : '+bar_PA_1+' -> '+bar_PA+'.')
+                print(name+' : Disabled bar_PA toggle!')
+            toggle_bar_PA = 'F'
+            bar_PA_1 = bar_PA
+    
+    # Convert bar PA to disk plane, instead of galactic plane!
+    # `bar_PA_diskplane = bar_PA - PA`
+    bar_PA_diskplane = float(bar_PA_1) - float(PA_1)
+    print('!!! DEBUG! '+str(bar_PA_1))
+    print('!!! DEBUG! '+str(PA_1))
+    if bar_PA_diskplane<=-180.:
+        bar_PA_diskplane = bar_PA_diskplane+360.
+    elif bar_PA_diskplane>180.:
+        bar_PA_diskplane = bar_PA_diskplane-360.
+    print('!!! DEBUG! '+str(bar_PA_diskplane))
+    # Use as string. Set 45deg if bar fit is disabled.
+    if bar_fit_try==True:
+        bar_PA_diskplane = "{0:4.2f}".format(bar_PA_diskplane)
+    else:
+        bar_PA_diskplane = "{0:4.2f}".format(45.*u.deg)
+    
     
     # Overrides from input!
     if toggle_xcen_over!=None:
-        print('xcen overwritten: '+toggle_xcen+'->'+toggle_xcen_over)
+        print('xcen toggle overwritten: '+toggle_xcen+'->'+toggle_xcen_over)
         toggle_xcen = toggle_xcen_over
     if toggle_PA_over!=None:
-        print('PA overwritten: '+toggle_PA+'->'+toggle_PA_over)
+        print('PA toggle overwritten: '+toggle_PA+'->'+toggle_PA_over)
         toggle_PA = toggle_PA_over
     if toggle_eps_over!=None:
-        print('Eps overwritten: '+toggle_eps+'->'+toggle_eps_over)
+        print('Eps toggle overwritten: '+toggle_eps+'->'+toggle_eps_over)
         toggle_eps = toggle_eps_over
     if toggle_vsys_over!=None:
-        print('Vsys overwritten: '+toggle_vsys+'->'+toggle_vsys_over)
+        print('Vsys toggle overwritten: '+toggle_vsys+'->'+toggle_vsys_over)
         toggle_vsys = toggle_vsys_over
+    if toggle_bar_PA_over!=None:
+        print('Bar PA toggle overwritten: '+toggle_bar_PA+'->'+toggle_bar_PA_over)
+        toggle_bar_PA = toggle_bar_PA_over
         
     # CALCULATE RADII. (Now that all the params (PA, encl, etc) have been sorted out.)
-#     # METHOD 1
-#     # Original.
-#     rad = gal.radius(skycoord=skycoord).to(u.pc).value
-#     radius_max = np.percentile(rad[~np.isnan(I_mom1)],99.0)
-#                  # ^ Max radius used, in pc.
-#     radius_max_pix = ((radius_max*u.pc / gal.distance.to(u.pc)).value * u.rad.to(u.arcsec)) / pixsizes_arcsec.value
-#     radius_max_pix = np.nanmin([radius_max_pix,np.sqrt(float(xcen_1)**2+float(ycen_1)**2)]) # Upper limit.
-#     radius_pix = np.linspace(1,radius_max_pix,30)                              # Radius array, in pixels.
-#     # METHOD 2
-#     # Calculate radius map of galaxy, in galactic plane.
-#     Xgal,Ygal = gal.radius(skycoord=skycoord,header=hdr,returnXY=True)   # Maps of x,y in galactic plane, in pc.
-#     Xgal = ((Xgal.to(u.pc) / gal.distance.to(u.pc)).value * u.rad.to(u.arcsec)) / pixsizes_arcsec.value # In pixels.
-#     Ygal = ((Ygal.to(u.pc) / gal.distance.to(u.pc)).value * u.rad.to(u.arcsec)) / pixsizes_arcsec.value # In pixels.
-#     Rgal = np.sqrt(Xgal**2+Ygal**2)
-#     radius_max_pix = np.percentile(Rgal[~np.isnan(I_mom1)],99.0)
-#     radius_pix = np.linspace(1,radius_max_pix,30)                              # Radius array, in pixels.
+
+    # METHOD 2
+    # Use previous DiskFit parameters to determine what radii look like!
+    incl_1 = (np.arccos(1.-float(eps_1))*u.rad).to(u.deg)
+    gal.position_angle = float(PA_1)*u.deg
+    gal.inclination = incl_1
+    gal.vsys = float(vsys_1)*u.km/u.s
+    # Calculate radius map of galaxy, in galactic plane.
+    pixsizes_deg = wcs.utils.proj_plane_pixel_scales(wcs.WCS(hdr))[0]*u.deg # Pixel width, in deg.
+    pixsizes_arcsec = pixsizes_deg.to(u.arcsec)                             # Pixel width, in arcsec.
+    X,Y = gal.radius(header=hdr, returnXY=True)     # Coords in disk plane, in pc.
+    X = ((X.to(u.pc) / gal.distance.to(u.pc)).value * u.rad.to(u.arcsec)) / pixsizes_arcsec.value # In pixels.
+    Y = ((Y.to(u.pc) / gal.distance.to(u.pc)).value * u.rad.to(u.arcsec)) / pixsizes_arcsec.value # In pixels.
+    R = np.sqrt(X**2+Y**2)
+    phi = np.arctan2(Y,X)
+    index = (np.abs(np.cos(phi)) > 0.3)*(~np.isnan(I_mom1))  # Only consider points where cos(phi) is large so vobs doesn't diverge.
+    # Determine radius range!
+    radius_max_pix = np.percentile(R[index],98.5)
+    radius_min_pix = np.percentile(R[index],0.40)
+    n_radii = 25
+    
     # METHOD 3
     # Getting radius map just from the image alone. Doesn't adapt with fitted params.
-    xrange = np.arange(I_mom1.shape[1])-float(xcen_1)
-    yrange = np.arange(I_mom1.shape[0])-float(ycen_1)
-    X = np.tile(xrange, (I_mom1.shape[0],1))     # Map of X values, in pixels.
-    Y = np.tile(yrange, (I_mom1.shape[1],1)).T   # Map of Y values, in pixels.
-    R = np.sqrt(X**2+Y**2)                  # Map of radii, in pixels.
-    radius_max_pix = np.percentile(R[~np.isnan(I_mom1)],99.5)
-    radius_min_pix = np.percentile(R[~np.isnan(I_mom1)],0.40)
-    radius_pix = np.linspace(radius_min_pix,radius_max_pix,25)                  # Radius array, in pixels.
+#    xrange = np.arange(I_mom1.shape[1])-float(xcen_1)
+#    yrange = np.arange(I_mom1.shape[0])-float(ycen_1)
+#    X = np.tile(xrange, (I_mom1.shape[0],1))     # Map of X values, in pixels.
+#    Y = np.tile(yrange, (I_mom1.shape[1],1)).T   # Map of Y values, in pixels.
+#    R = np.sqrt(X**2+Y**2)                  # Map of radii, in pixels.
+#    # Determine radius range!
+#    radius_max_pix = np.percentile(R[~np.isnan(I_mom1)],99.5)
+#    radius_min_pix = np.percentile(R[~np.isnan(I_mom1)],0.40)
+
+    # CUSTOM radius range, if any!
+    if name.lower()=='ngc1317':
+        radius_max_pix = np.percentile(R[~np.isnan(I_mom1)*index],94.0)
+        radius_min_pix = np.percentile(R[~np.isnan(I_mom1)*index],0.4)
+        n_radii = 17
+    if name.lower()=='ngc1511':
+        n_radii = 18
+    if name.lower()=='ngc1512':
+        radius_max_pix = np.percentile(R[~np.isnan(I_mom1)*index],95.0)
+        radius_min_pix = np.percentile(R[~np.isnan(I_mom1)*index],10.0)
+        n_radii = 18
+    if name.lower()=='ngc1546':
+        radius_max_pix = np.percentile(R[~np.isnan(I_mom1)*index],98.0)
+        radius_min_pix = np.percentile(R[~np.isnan(I_mom1)*index],0.5)
+    if name.lower()=='ngc1809':
+        n_radii = 18
+    if name.lower()=='ngc3137':
+        radius_max_pix = np.percentile(R[~np.isnan(I_mom1)*index],91.0)
+        radius_min_pix = np.percentile(R[~np.isnan(I_mom1)*index],0.4)
+        n_radii = 18
+    if name.lower()=='ngc3351':
+        radius_max_pix = np.percentile(R[~np.isnan(I_mom1)*index],99.5)
+        radius_min_pix = np.percentile(R[~np.isnan(I_mom1)*index],10.0)
+    if name.lower()=='ngc3507':
+        n_radii = 20
+    if name.lower()=='ngc3511':
+        n_radii = 20
+    if name.lower()=='ngc3626':
+        n_radii = 17
+    if name.lower()=='ngc4207':
+        n_radii = 18
+    if name.lower()=='ngc4293':
+        n_radii = 17
+    if name.lower()=='ngc4540':
+        n_radii = 18
+    if name.lower()=='ngc4548':
+        radius_max_pix = np.percentile(R[~np.isnan(I_mom1)*index],97.0)
+        radius_min_pix = np.percentile(R[~np.isnan(I_mom1)*index],10.0)
+    if name.lower()=='ngc4781':
+        n_radii = 20
+    if name.lower()=='ngc4826':
+        radius_max_pix = np.percentile(R[~np.isnan(I_mom1)*index],83.0)
+        radius_min_pix = np.percentile(R[~np.isnan(I_mom1)*index],0.5)
+        n_radii = 18
+    if name.lower()=='ngc4941':
+        radius_max_pix = np.percentile(R[~np.isnan(I_mom1)*index],98.0)
+        radius_min_pix = np.percentile(R[~np.isnan(I_mom1)*index],9.0)
+        n_radii = 18
+    if name.lower()=='ngc5042':
+        n_radii = 20
+    if name.lower()=='ngc5134':
+        n_radii = 20
+    if name.lower()=='ngc6744':
+        radius_max_pix = np.percentile(R[~np.isnan(I_mom1)*index],95.5)
+        radius_min_pix = np.percentile(R[~np.isnan(I_mom1)*index],5.0)
+    if name.lower()=='ngc7456':
+        n_radii = 18
+
+    radius_pix = np.linspace(radius_min_pix,radius_max_pix,n_radii)                  # Radius array, in pixels.
 #     print(radius_pix)
 
     # Generate the actual input file ('input_str')!
@@ -399,8 +527,8 @@ def gen_input(name,data_mode='7m',mapmode='mom1',errors=False,errors_exist=False
     text.append(""+toggle_PA+" "+toggle_eps+" "+toggle_xcen+"                   #(!!!) FFT, then TTF!")
     text.append(""+PA_1+"  "+eps_1+"            # PA, eps")
     text.append(""+xcen_1+"  "+ycen_1+"            # xcen, ycen             ")
-#     text.append("F T "+PA_1+" "+m+"             #(?) Noncirc/non-axisymm/BAR flow toggle. Avoid radial.")
-    text.append("F T "+str(45.0)+" "+m+"             #(?) Noncirc/non-axisymm/BAR flow toggle. Avoid radial.")
+    text.append(""+has_bar+" "+toggle_bar_PA+" "+str(bar_PA_diskplane)+" "+m+"             #(?) Noncirc/non-axisymm/BAR flow toggle. Avoid radial.")
+#     text.append("F T "+str(45.0)+" "+m+"             #(?) Noncirc/non-axisymm/BAR flow toggle. Avoid radial.")
     text.append("T F                     #(?) Inner interp toggle + radial flow toggle. Avoid bar.")
     text.append(""+toggle_vsys+" "+vsys_1+" "+delta_ISM+" 25.0       # Vsys")
     text.append("F T T T 90 0 0          #(?) Warp? (CANNOT use with Bar or Radial flow fits!)")
@@ -408,7 +536,8 @@ def gen_input(name,data_mode='7m',mapmode='mom1',errors=False,errors_exist=False
     text.append("-0.01 -0.01                                ")
     text.append(""+toggle_emom1+" -50 5 -1.0                               ")
     text.append("F                       # Verbose          ")
-    text.append("3.00 "+"{0:4.2f}".format(radius_pix.max()/4.)+"               #(?) Min/max bar radii. May need improvement")
+    text.append("0.00 "+"{0:4.2f}".format(bar_R*5./5.)+"               #Min/max bar radii. May need improvement")
+#    print('(!!!!) NOTE: bar_R multiplied by 4/5 as a test.')
     for j in range(radius_pix.size):
         text.append("{0:4.2f}".format(radius_pix[j]))
     input_str = ''
@@ -540,7 +669,7 @@ def read_output(name,iteration=1,alteration=[False]*8,verbose=True,\
                     xcen_out = 999999
                     ycen_out = 999999
 #                 alteration[alteration_label.index('coords_altered')] = True
-            if lines[i][0:23]=='Non-axisymm phib (deg):':
+            if lines[i][0:23]=='Non-axisymm phib (disk ':
                 bar_PA_out = float(lines[i][36:43])*u.deg
                 alteration[alteration_label.index('bar_PA_altered')] = True
             if lines[i][0:11]=='Vsys (km/s)':
@@ -666,22 +795,36 @@ def read_output(name,iteration=1,alteration=[False]*8,verbose=True,\
     if ~np.isnan(bar_PA_out):
         if verbose==True:
             print(name+'\'s BAR PA : '+"{0:4.2f}".format(bar_PA_in)+' -> '+"{0:4.2f}".format(bar_PA_out)+'.')
-        if (180.*u.deg - np.abs(np.abs(bar_PA_in - bar_PA_out) - 180.*u.deg))>=40*u.deg:
+        if (180.*u.deg - np.abs(np.abs(bar_PA_in - bar_PA_out) - 180.*u.deg))>=999*u.deg:
             if verbose==True:
-                print('    Bad Bar PA off by >40deg! Result discarded.')
+                print('    Bad Bar PA off by >999deg! Result discarded.')
             bar_PA_out = bar_PA_in
         else:
             if verbose==True:
                 print('    Good Bar PA = '+"{0:4.2f}".format(bar_PA_out)+'.')
             alteration[alteration_label.index('bar_PA_altered')] = True
     else:
+        bar_nooutput = True       # Only needed for converting input/output bar_PA between disk/sky values.
         bar_PA_out = bar_PA_in
         if alteration[alteration_label.index('bar_PA_altered')]==True:
             if verbose==True:
                 print('Bar PA output was not generated, as a good value has already been found!')
-#         else:
-#             if verbose==True:
-#                 print('Bar PA output either failed or was Disabled.')
+        else:
+            if verbose==True:
+                print('Bar PA output either failed or was Disabled.')
+    
+    # Convert bar PA to galactic plane, instead of disk plane!
+    # `bar_PA_diskplane = bar_PA - PA`
+    print('!!! DEBUG!'+' Output bar PA (should be DISK):'+str(bar_PA_out))
+    bar_PA_galacticplane    = bar_PA_out + PA_out
+    if bar_PA_galacticplane<=0*u.deg:
+        bar_PA_galacticplane = bar_PA_galacticplane+360*u.deg
+    elif bar_PA_galacticplane>360*u.deg:
+        bar_PA_galacticplane = bar_PA_galacticplane-360*u.deg
+    bar_PA_out = bar_PA_galacticplane
+    if bar_nooutput==True:
+        bar_PA_in = bar_PA_out
+    print('!!! DEBUG!'+' Output bar PA (should be GALACTIC):'+str(bar_PA_out))
     
     # Warp Radius (min radius at which warp begins)
     if ~np.isnan(r_w_out):
@@ -754,6 +897,7 @@ def read_output(name,iteration=1,alteration=[False]*8,verbose=True,\
     if chi2_out>150:
         if verbose==True:
             print(' (!) WARNING : chi^2 = '+"{0:4.2f}".format(chi2_out)+'.')
+            
     return xcen_out,ycen_out, PA_out, eps_out, incl_out, vsys_out, bar_PA_out, r_w_out, warp_PA_out, warp_eps_out,\
            xcen_in, ycen_in,  PA_in,  eps_in,  incl_in,  vsys_in,  bar_PA_in,  r_w_in,  warp_PA_in,  warp_eps_in,\
             alteration, chi2_out
@@ -879,6 +1023,9 @@ def read_all_outputs(gal,mode='params',diskfit_folder='diskfit_procedural/',use_
     PA_orig   = gal.position_angle
     incl_orig = gal.inclination
     vsys_orig = gal.vsys
+    bar_PA, bar_incl, bar_R = tools.bar_info_get(gal,'7m',radii='arcsec',customPA=True,\
+                 folder='/media/jnofech/BigData/galaxies/drive_tables/',fname='TABLE_Environmental_masks - Parameters')
+    print('dig.read_all_outputs(): WARNING: Only considering 7m data for bar information!')
     if np.isnan(vsys_orig):
         print('dig.read_all_outputs : WARNING - gal.vsys is NaN! Taking mean value of 7m mom1 map.')
         I_mom1 = tools.mom1_get(gal,'7m')
@@ -888,17 +1035,10 @@ def read_all_outputs(gal,mode='params',diskfit_folder='diskfit_procedural/',use_
     alteration_label = ['PA_altered','eps_altered','coords_altered','vsys_altered','bar_PA_altered',\
                         'r_w_altered','warp_eps_altered','warp_PA_altered']
     alteration = [False]*len(alteration_label)
-
-    for j in range(1,5):
-        # Read previous outputs!
-        # If the run fails at an iteration (say, j=3), then the previous (i.e. most recent "good")
-        #    `alteration` will be kept.
-        x,x,x,x,x,x,x,x,x,x,x,x,x,x,x,x,x,x,x,x,x,x\
-        = read_output(name,iteration=j,alteration=alteration,verbose=verbose,\
-                          diskfit_folder=diskfit_folder)
+    
     # Now, actually read outputs!
     # Check for custom inputs!
-    for ver in range(0,5):
+    for ver in range(0,6):
         custom_input = checkcustom(name,ver,diskfit_folder)
         if custom_input==True and use_custom==True:
             print('plotting : CUSTOM INPUT DETECTED! Reading custom outputs.')
@@ -909,26 +1049,28 @@ def read_all_outputs(gal,mode='params',diskfit_folder='diskfit_procedural/',use_
             break
     
     # Read outputs!
-    iteration=4
+    iteration=20
     while True:
-        xcen_out,ycen_out, PA_out, eps_out, incl_out, vsys_out, bar_PA_out, r_w_out, warp_PA_out, warp_eps_out,\
-        xcen_in, ycen_in,  PA_in,  eps_in,  incl_in,  vsys_in,  bar_PA_in,  r_w_in,  warp_PA_in,  warp_eps_in,\
-        alteration, chi2_out = read_output(name,iteration=iteration,alteration=alteration,\
-                                                  custom_input=custom_input,diskfit_folder=diskfit_folder)    
-        if [xcen_out,ycen_out, PA_out, eps_out, incl_out, vsys_out, bar_PA_out, r_w_out, warp_PA_out, warp_eps_out,\
+        with silence():
+            xcen_out,ycen_out, PA_out, eps_out, incl_out, vsys_out, bar_PA_out, r_w_out, warp_PA_out, warp_eps_out,\
             xcen_in, ycen_in,  PA_in,  eps_in,  incl_in,  vsys_in,  bar_PA_in,  r_w_in,  warp_PA_in,  warp_eps_in,\
-            alteration, chi2_out] == [np.nan,np.nan,np.nan,np.nan,np.nan,np.nan,np.nan,np.nan,np.nan,np.nan,\
-            np.nan,np.nan,np.nan,np.nan,np.nan,np.nan,np.nan,np.nan,np.nan,np.nan,\
-            alteration,np.nan] and iteration!=0:
-            print('plotting : OUTPUT FILE NOT DETECTED! Reverting to previous output file.')
-            iteration = iteration-1
-        elif iteration==0:
-            print('plotting : NOT A SINGLE OUTPUT FILE DETECTED! Very sad.')
-            break
-        else:
-            break
+            alteration, chi2_out = read_output(name,iteration=iteration,alteration=alteration,\
+                                                      custom_input=custom_input,diskfit_folder=diskfit_folder)    
+            if [xcen_out,ycen_out, PA_out, eps_out, incl_out, vsys_out, bar_PA_out, r_w_out, warp_PA_out, warp_eps_out,\
+                xcen_in, ycen_in,  PA_in,  eps_in,  incl_in,  vsys_in,  bar_PA_in,  r_w_in,  warp_PA_in,  warp_eps_in,\
+                alteration, chi2_out] == [np.nan,np.nan,np.nan,np.nan,np.nan,np.nan,np.nan,np.nan,np.nan,np.nan,\
+                np.nan,np.nan,np.nan,np.nan,np.nan,np.nan,np.nan,np.nan,np.nan,np.nan,\
+                alteration,np.nan] and iteration!=0:
+                iteration = iteration-1
+            elif iteration<=0:
+                print('plotting : NOT A SINGLE OUTPUT FILE DETECTED! Very sad.')
+                break
+            else:
+                break
     if iteration!=0:
         print('Output for iteration='+str(iteration)+' successful!')
+    else:
+        print('plotting : OUTPUT FILE NOT DETECTED! Reverting to previous output file.')
     
     if np.isnan(PA_out):
         print('WARNING: PA never changed!')
@@ -941,7 +1083,7 @@ def read_all_outputs(gal,mode='params',diskfit_folder='diskfit_procedural/',use_
         vsys_out = vsys_orig
     
     if mode=='params':
-        return xcen_out,ycen_out, PA_out, eps_out, incl_out, vsys_out
+        return xcen_out,ycen_out, PA_out, eps_out, incl_out, vsys_out, bar_PA_out
     elif mode=='rotcurve':
         # Read rotcurves!
         Rd, vrotd, vrot_ed = read_rotcurve(name,iteration=iteration,custom_input=custom_input,\

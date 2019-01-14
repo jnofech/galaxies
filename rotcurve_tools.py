@@ -11,6 +11,7 @@ from scipy import ndimage, misc, interpolate, optimize
 from scipy.interpolate import BSpline, make_lsq_spline
 from pandas import DataFrame, read_csv
 import pandas as pd
+import os.path
 
 # Import my own code
 import galaxytools as tools
