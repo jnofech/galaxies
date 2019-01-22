@@ -74,19 +74,20 @@ def galaxy(name,customPA=True,custominc=True,customcoords='phil'):
     
 def mom0_get(gal,data_mode='',\
              path7m ='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-LP/working_data/osu/',\
-             path12m='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-v1p0/'):
+             path12m='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-LP/delivery/broad_maps/'):
     if isinstance(gal,Galaxy):
         name = gal.name.lower()
     elif isinstance(gal,str):
         name = gal.lower()
     else:
         raise ValueError("'gal' must be a str or galaxy!")
-    if data_mode == '7m':
+    if data_mode == '7m+tp':
+        print('tools.cube_get(): WARNING: Changing data_mode from 7m+tp to 7m. Will try to select 7m+tp regardless.')
         data_mode = '7m'
     elif data_mode in ['12m','12m+7m']:
-        data_mode = '12m+7m'  
-    elif data_mode=='':
-        print('No data_mode set. Defaulted to 12m+7m.')
+        data_mode = '12m+7m'
+    elif data_mode in ['12m+tp','12m+7m+tp']:
+        print('tools.cube_get(): WARNING: Changing data_mode from '+data_mode+' to 12m. Will try to select 12m+tp regardless.')
         data_mode = '12m+7m'
 
     # Get the mom0 file. In K km/s.
@@ -102,9 +103,13 @@ def mom0_get(gal,data_mode='',\
             I_mom0 = fits.getdata(path+filename_7m)
     elif data_mode=='12m+7m':
         path = path12m
-        filename = name+'_co21_'+data_mode+'+tp_mom0.fits'
-        if os.path.isfile(path+filename):
-            I_mom0 = fits.getdata(path+filename)
+        filename_12mtp = name+'_'+data_mode+'+tp_co21_broad_mom0.fits'    # 12m+tp mom0. Ideal.
+        filename_12m   = name+'_'+data_mode+   '_co21_broad_mom0.fits'    # 12m mom0. Less reliable.
+        if os.path.isfile(path+filename_12mtp):
+            I_mom0 = fits.getdata(path+filename_12mtp)
+        elif os.path.isfile(path+filename_12m):
+            print('No 12m+7m+tp mom0 found. Using 12m+7m mom0 instead.')
+            I_mom0 = fits.getdata(path+filename_12m)
     else:
         print('WARNING: Invalid data_mode-- No mom0 was found!')
         I_mom0 = None
@@ -113,9 +118,9 @@ def mom0_get(gal,data_mode='',\
         print('WARNING: No mom0 was found!')
     return I_mom0
 
-def mom1_get(gal,data_mode='',return_best=False, verbose=True,\
+def mom1_get(gal,data_mode='',return_best=False, verbose=True,returnfile=False,\
              path7m ='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-LP/working_data/osu/',\
-             path12m='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-v1p0/',\
+             path12m='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-LP/delivery/broad_maps/',\
              folder_hybrid='jnofech_mom1_hybrid/'):
     '''
     data_mode = '7m','12m','12m+7m'.
@@ -126,17 +131,17 @@ def mom1_get(gal,data_mode='',return_best=False, verbose=True,\
         name = gal.lower()
     else:
         raise ValueError("'gal' must be a str or galaxy!")
-    if data_mode == '7m':
+    if data_mode == '7m+tp':
+        print('tools.cube_get(): WARNING: Changing data_mode from 7m+tp to 7m. Will try to select 7m+tp regardless.')
         data_mode = '7m'
     elif data_mode in ['12m','12m+7m']:
-        data_mode = '12m+7m'  
+        data_mode = '12m+7m'
+    elif data_mode in ['12m+tp','12m+7m+tp']:
+        print('tools.cube_get(): WARNING: Changing data_mode from '+data_mode+' to 12m. Will try to select 12m+tp regardless.')
+        data_mode = '12m+7m'
     elif data_mode.lower() in ['both','hybrid']:
-        data_mode = 'hybrid'  
-    elif data_mode=='':
-        if verbose==True:
-            print('No data_mode set. Defaulted to 12m+7m.')
-        data_mode = '12m+7m' 
-
+        data_mode = 'hybrid'
+        
     # Get the mom1 file. In K km/s.
     I_mom1     = None
     I_mom1_7m  = None
@@ -162,23 +167,30 @@ def mom1_get(gal,data_mode='',return_best=False, verbose=True,\
     if data_mode in ['12m+7m','hybrid']:
         data_mode_name = '12m+7m'
         path = path12m
-        filename_12mtp = name+'_co21_'+data_mode_name+'+tp_mom1.fits'  # (?) Will all the new maps have '+tp'?
-        best_mom1_12m = '12m+7m+tp'                                    # (?) ^
-        best_mom1 = best_mom1_12m
+        filename_12mtp = name+'_'+data_mode_name+'+tp_co21_broad_mom1.fits'    # 7m+tp mom1. Ideal.
+        filename_12m   = name+'_'+data_mode_name+   '_co21_broad_mom1.fits'    # 7m mom1. Less reliable.
         if os.path.isfile(path+filename_12mtp):
             I_mom1_12m = fits.open(path+filename_12mtp,mode='update')
             I_mom1 = I_mom1_12m[0].data
+            best_mom1_12m='12m+7m+tp'      # Keeps track of whether 12m or 12m+tp is available. Returning this is optional.
+        elif os.path.isfile(path+filename_12m):
+            if verbose==True:
+                print('No 12m+7m+tp mom1 found. Using 12m+7m mom1 instead.')
+            I_mom1_12m = fits.open(path+filename_12m,mode='update')
+            I_mom1 = I_mom1_12m[0].data
+            best_mom1_12m='12m+7m'
         else:
-            print('WARNING: "'+path+filename_12mtp+'" not found!')
+            best_mom1_12m = 'None'
+        best_mom1 = best_mom1_12m
     if data_mode=='hybrid':
         # Fix both of their headers!
         for kw in ['CTYPE3', 'CRVAL3', 'CDELT3', 'CRPIX3', 'CUNIT3']:
-            del I_mom1_12m[0].header[kw]
             del I_mom1_7m[0].header[kw]
+            del I_mom1_12m[0].header[kw]
         for i in ['1','2','3']:
             for j in ['1', '2', '3']:
                 del I_mom1_7m[0].header['PC'+i+'_'+j]
-                del I_mom1_12m[0].header['PC0'+i+'_0'+j]
+                del I_mom1_12m[0].header['PC'+i+'_'+j]
         hdr = I_mom1_12m[0].header
         # Reproject the 7m map to the 12m's dimensions!
         # Conveniently, the interpolation is also done for us.
@@ -220,7 +232,7 @@ def mom1_get(gal,data_mode='',return_best=False, verbose=True,\
     
 def emom1_get(gal,data_mode='',return_best=False, verbose=True,\
              path7m ='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-LP/working_data/osu/',\
-             path12m='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-v1p0/',\
+             path12m='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-LP/delivery/broad_maps/',\
              folder_hybrid='jnofech_mom1_hybrid/'):
     '''
     data_mode = '7m','12m','12m+7m'.
@@ -231,16 +243,16 @@ def emom1_get(gal,data_mode='',return_best=False, verbose=True,\
         name = gal.lower()
     else:
         raise ValueError("'gal' must be a str or galaxy!")
-    if data_mode == '7m':
+    if data_mode == '7m+tp':
+        print('tools.cube_get(): WARNING: Changing data_mode from 7m+tp to 7m. Will try to select 7m+tp regardless.')
         data_mode = '7m'
     elif data_mode in ['12m','12m+7m']:
-        data_mode = '12m+7m'  
+        data_mode = '12m+7m'
+    elif data_mode in ['12m+tp','12m+7m+tp']:
+        print('tools.cube_get(): WARNING: Changing data_mode from '+data_mode+' to 12m. Will try to select 12m+tp regardless.')
+        data_mode = '12m+7m'
     elif data_mode.lower() in ['both','hybrid']:
         data_mode = 'hybrid'
-    elif data_mode=='':
-        if verbose==True:
-            print('No data_mode set. Defaulted to 12m+7m.')
-        data_mode = '12m+7m'
 
     # Get the emom1 file. In K km/s.
     I_emom1     = None
@@ -267,14 +279,21 @@ def emom1_get(gal,data_mode='',return_best=False, verbose=True,\
     if data_mode in ['12m+7m','hybrid']:
         data_mode_name = '12m+7m'
         path = path12m
-        filename_12mtp = name+'_co21_'+data_mode_name+'+tp_emom1.fits'  # (?) Will all the new maps have '+tp'?
-        best_emom1_12m = '12m+7m+tp'                                    # (?) ^
-        best_emom1 = best_emom1_12m
+        filename_12mtp = name+'_'+data_mode_name+'+tp_co21_broad_emom1.fits'    # 7m+tp emom1. Ideal.
+        filename_12m   = name+'_'+data_mode_name+   '_co21_broad_emom1.fits'    # 7m emom1. Less reliable.
         if os.path.isfile(path+filename_12mtp):
             I_emom1_12m = fits.open(path+filename_12mtp,mode='update')
             I_emom1 = I_emom1_12m[0].data
+            best_emom1_12m='12m+7m+tp'      # Keeps track of whether 12m or 12m+tp is available. Returning this is optional.
+        elif os.path.isfile(path+filename_12m):
+            if verbose==True:
+                print('No 12m+7m+tp mom1 found. Using 12m+7m mom1 instead.')
+            I_emom1_12m = fits.open(path+filename_12m,mode='update')
+            I_emom1 = I_emom1_12m[0].data
+            best_emom1_12m='12m+7m'
         else:
-            print('WARNING: "'+path+filename_12mtp+'" not found!')
+            best_emom1_12m = 'None'
+        best_emom1 = best_emom1_12m
     if data_mode=='hybrid':
         # Fix both of their headers!
         for kw in ['CTYPE3', 'CRVAL3', 'CDELT3', 'CRPIX3', 'CUNIT3']:
@@ -283,7 +302,7 @@ def emom1_get(gal,data_mode='',return_best=False, verbose=True,\
         for i in ['1','2','3']:
             for j in ['1', '2', '3']:
                 del I_emom1_7m[0].header['PC'+i+'_'+j]
-                del I_emom1_12m[0].header['PC0'+i+'_0'+j]
+                del I_emom1_12m[0].header['PC'+i+'_'+j]
         hdr = I_emom1_12m[0].header
         # Reproject the 7m map to the 12m's dimensions!
         # Conveniently, the interpolation is also done for us.
@@ -325,7 +344,7 @@ def emom1_get(gal,data_mode='',return_best=False, verbose=True,\
 
 def tpeak_get(gal,data_mode='',\
              path7m ='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-LP/working_data/osu/',\
-             path12m='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-v1p0/'):
+             path12m='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-LP/delivery/broad_maps/'):
     if isinstance(gal,Galaxy):
         name = gal.name.lower()
     elif isinstance(gal,str):
@@ -353,9 +372,17 @@ def tpeak_get(gal,data_mode='',\
             I_tpeak = fits.getdata(path+filename_7m)
     elif data_mode=='12m+7m':
         path = path12m
-        filename = name+'_co21_'+data_mode+'+tp_tpeak.fits'
-        if os.path.isfile(path+filename):
-            I_tpeak = fits.getdata(path+filename)
+        filename_12mtp = name+'_'+data_mode+'+tp_co21_broad_tpeak.fits'    # 12m+tp tpeak. Ideal.
+        filename_12m   = name+'_'+data_mode+   '_co21_broad_tpeak.fits'    # 12m tpeak. Less reliable.
+        if os.path.isfile(path+filename_12mtp):
+            I_tpeak = fits.getdata(path+filename_12mtp)
+        elif os.path.isfile(path+filename_12m):
+            print('No 12m+7m+tp tpeak found. Using 12m+7m tpeak instead.')
+            I_tpeak = fits.getdata(path+filename_12m)
+        else:
+            print('tools.tpeak_get(): tpeak maps missing. Calculating tpeak directly from cube.')
+            cube = (cube_get(gal,data_mode).unmasked_data[:]).to(u.K).value
+            I_tpeak = cube.max(axis=0)       
     else:
         print('WARNING: Invalid data_mode-- No tpeak was found!')
         I_tpeak = None
@@ -366,7 +393,7 @@ def tpeak_get(gal,data_mode='',\
 
 def noise_get(gal,data_mode='',cube=None,noisypercent=0.15,\
              path7m ='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-LP/working_data/osu/',\
-             path12m='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-v1p0/'):
+             path12m='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-LP/delivery/broad_maps/'):
     # Returns a map of averaged ABSOLUTE VALUE of noise values.
     # This 'noisypercent' refers to the fraction of the 'v'-layers (0th axis in cube; around the 0th "sheet")
     #     that are assumed to be noise.
@@ -400,19 +427,20 @@ def noise_get(gal,data_mode='',cube=None,noisypercent=0.15,\
 
 def hdr_get(gal,data_mode='',dim=3,\
              path7m ='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-LP/working_data/osu/',\
-             path12m='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-v1p0/'):
+             path12m='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-LP/delivery/cubes/'):
     if isinstance(gal,Galaxy):
         name = gal.name.lower()
     elif isinstance(gal,str):
         name = gal.lower()
     else:
         raise ValueError("'gal' must be a str or galaxy!")
-    if data_mode == '7m':
+    if data_mode == '7m+tp':
+        print('tools.cube_get(): WARNING: Changing data_mode from 7m+tp to 7m. Will try to select 7m+tp regardless.')
         data_mode = '7m'
     elif data_mode in ['12m','12m+7m']:
         data_mode = '12m+7m'
-    elif data_mode=='':
-        print('No data_mode set. Defaulted to 12m+7m.')
+    elif data_mode in ['12m+tp','12m+7m+tp']:
+        print('tools.cube_get(): WARNING: Changing data_mode from '+data_mode+' to 12m. Will try to select 12m+tp regardless.')
         data_mode = '12m+7m'
     
     hdr = None
@@ -434,17 +462,23 @@ def hdr_get(gal,data_mode='',dim=3,\
             
 def cube_get(gal,data_mode,return_best=False,\
              path7m ='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-LP/working_data/osu/',\
-             path12m='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-v1p0/'):
+             path12m='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-LP/delivery/cubes/'):
     if isinstance(gal,Galaxy):
         name = gal.name.lower()
     elif isinstance(gal,str):
         name = gal.lower()
     else:
         raise ValueError("'gal' must be a str or galaxy!")
-    if data_mode == '7m':
+    # (!!!) COPY HERE
+    if data_mode == '7m+tp':
+        print('tools.cube_get(): WARNING: Changing data_mode from 7m+tp to 7m. Will try to select 7m+tp regardless.')
         data_mode = '7m'
     elif data_mode in ['12m','12m+7m']:
         data_mode = '12m+7m'
+    elif data_mode in ['12m+tp','12m+7m+tp']:
+        print('tools.cube_get(): WARNING: Changing data_mode from '+data_mode+' to 12m. Will try to select 12m+tp regardless.')
+        data_mode = '12m+7m'
+    # (!!!) END COPY HERE
 
     # Spectral Cube
     cube=None
@@ -463,10 +497,15 @@ def cube_get(gal,data_mode,return_best=False,\
             best_cube = 'None'
     elif data_mode=='12m+7m':
         path = path12m
-        filename = name+'_co21_'+data_mode+'+tp_pbcorr_round_k.fits'
-        if os.path.isfile(path+filename):
-            cube = SpectralCube.read(path+filename)
+        filename_12mtp = name+'_'+data_mode+'+tp_co21_pbcorr_round_k.fits'
+        filename_12m   = name+'_'+data_mode+    '_co21_pbcorr_round_k.fits'
+        if os.path.isfile(path+filename_12mtp):
+            cube = SpectralCube.read(path+filename_12mtp)
             best_cube = '12m+7m+tp'
+        elif os.path.isfile(path+filename_12m):
+            print('No 12m+tp cube found. Using 12m cube instead.')
+            cube = SpectralCube.read(path+filename_12m)
+            best_cube = '12m+7m'
         else:
             best_cube = 'None'
     else:
@@ -484,6 +523,7 @@ def cube_get(gal,data_mode,return_best=False,\
 def mask_get(gal,data_mode,\
              path7m ='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-LP/working_data/osu/eros_masks/',\
              path12m='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-v1p0/'):
+    raise ValueError('tools.mask_get() : Has not been touched! Needs PHANGS-ALMA-LP/delivery/cubes support!')
     if isinstance(gal,Galaxy):
         name = gal.name.lower()
     elif isinstance(gal,str):
@@ -1746,8 +1786,6 @@ def bar_info_get(gal,data_mode,radii='arcsec',customPA=True,\
     --------
     bar_PA : Quantity
         PA of bar, in degrees.
-    bar_incl : Quantity
-        Inclination of bar, in degrees.
     bar_R : Quantity
         Radius of bar, in parsec.
     
@@ -1779,19 +1817,21 @@ def bar_info_get(gal,data_mode,radii='arcsec',customPA=True,\
         # Abort if there's no bar.
         if '-999' in [bar_axisratio,bar_PA,bar_R]:
             print('tools.bar_info_get() : '+name.upper()+' does not have a bar!')
-            return np.nan, np.nan, np.nan
+            return np.nan, np.nan
         bar_axisratio = float(bar_axisratio)   # Axis ratio == a/b == 1/cos(i)
-        bar_incl = (np.arccos(1./bar_axisratio)*u.rad).to(u.deg)     # (!!!) Delete this later. Bars don't have inclinations, ya donut
+#         bar_incl = (np.arccos(1./bar_axisratio)*u.rad).to(u.deg)     # (!!!) Delete this? Bars don't have inclinations, ya donut
         bar_PA = float(bar_PA)*u.deg           # PA (deg)
         bar_R = float(bar_R)*u.arcsec          # R (arcsec)
         # Custom PA values!
 #        if customPA==True:
-#            # a) Bar PA is off by 180 degrees.
+            # a) Bar PA is off by 180 degrees.
 #            galaxies_180=['IC5273','NGC1300','NGC1365','NGC1385','NGC1511','NGC1512','NGC1559',\
 #                          'NGC4535','NGC4731','NGC4781','NGC4826','NGC5042','NGC5134','NGC5530']
 #            raise ValueError('tools.bar_info_get() : Custom bar PAs not decided!!')
 #            if name.upper() in galaxies_180:
-#                if PA.value>180.:
+#            if True:
+#                print('(!!!) NOTE: Flipping bar PA by 180deg has NO EFFECT for m=2 fits! Uses photometric, not kinematic.')
+#                if bar_PA.value>180.:
 #                    bar_PA = bar_PA-180.*u.deg
 #                else:
 #                    bar_PA = bar_PA+180.*u.deg
@@ -1800,8 +1840,8 @@ def bar_info_get(gal,data_mode,radii='arcsec',customPA=True,\
 #                bar_PA = 999.*u.deg
     else:
         print('tools.bar_info_get() : '+name.upper()+' not in '+fname+'.csv!')
-        return np.nan, np.nan, np.nan
-
+        return np.nan, np.nan
+    
     # Convert R to desired units!
     if radii=='arcsec':
         bar_R = bar_R            # Bar radius, in ".
@@ -1819,9 +1859,9 @@ def bar_info_get(gal,data_mode,radii='arcsec',customPA=True,\
         elif radii in ['pix','pixel','pixels']:
             bar_R = bar_R_pix                     # Bar radius, in pixels.
 
-    return bar_PA, bar_incl, bar_R
+    return bar_PA, bar_R
    
-def info(gal,conbeam=None,data_mode='',sfr_band_uv='nuv',sfr_band_ir='w3',sfr_autocorrect=False):
+def info(gal,conbeam=None,data_mode='',sfr_band_uv='nuv',sfr_band_ir='w3',hasmask=False,sfr_autocorrect=False):
     '''
     Returns basic info from galaxies.
     Astropy units are NOT attached to outputs.
@@ -1848,6 +1888,9 @@ def info(gal,conbeam=None,data_mode='',sfr_band_uv='nuv',sfr_band_ir='w3',sfr_au
     sfr_autocorrect=False : bool
         Attempts to get a 15" SFR
         map if the 7.5" one fails.
+    hasmask : bool
+        Determines whether a cube
+        mask is available.
         
     Returns:
     --------
@@ -1859,10 +1902,14 @@ def info(gal,conbeam=None,data_mode='',sfr_band_uv='nuv',sfr_band_ir='w3',sfr_au
         0th moment, in K km/s.
     I_mom1 : np.ndarray
         Velocity, in km/s.
+    (if hasmask==True) vpeak : np.ndarray
+        Peak velocity, in km/s.
     I_tpeak : np.ndarray
         Peak temperature, in K.
     cube : SpectralCube
         Spectral cube for the galaxy.
+    (if hasmask==True) mask : SpectralCube
+        Mask for 'cube'.
     sfr : np.ndarray
         2D map of the SFR, in Msun/kpc^2/yr.
     '''
@@ -1873,15 +1920,13 @@ def info(gal,conbeam=None,data_mode='',sfr_band_uv='nuv',sfr_band_ir='w3',sfr_au
     else:
         raise ValueError("'gal' must be a str or galaxy!")
         
-    if data_mode == '7m':
+    if data_mode == '7m+tp':
+        print('tools.cube_get(): WARNING: Changing data_mode from 7m+tp to 7m. Will try to select 7m+tp regardless.')
         data_mode = '7m'
-#         conbeam=None
-#         print( 'WARNING: SFR maps come in 12m sizes only.') #(!!!) What about for all the new 15" maps?
-#         print( 'WARNING: Convolution forcibly disabled.')
-    elif data_mode in ['12m','12m+7m']:                     #(???) Do separate 12m, 12m+7m data exist?
-        data_mode = '12m+7m'  
-    elif data_mode=='':
-        print('No data_mode set. Defaulted to 12m+7m.')
+    elif data_mode in ['12m','12m+7m']:
+        data_mode = '12m+7m'
+    elif data_mode in ['12m+tp','12m+7m+tp']:
+        print('tools.cube_get(): WARNING: Changing data_mode from '+data_mode+' to 12m. Will try to select 12m+tp regardless.')
         data_mode = '12m+7m'
     
     I_mom0 = mom0_get(gal,data_mode)
@@ -1893,31 +1938,23 @@ def info(gal,conbeam=None,data_mode='',sfr_band_uv='nuv',sfr_band_ir='w3',sfr_au
                                              #    beamwidth (i.e. higher resolution), but this often fails
                                              #    and we need to use 15" SFR maps instead.
     
-    # Fix the 2D header so WCS doesn't think that it's 3D!
-#     hdrcopy = copy.deepcopy(hdr2d)
-#     for kw in ['CTYPE3', 'CRVAL3', 'CDELT3', 'CRPIX3', 'CUNIT3']:
-#         del hdrcopy[kw]
-#     for i in ['1','2','3']:
-#         for j in ['1', '2', '3']:
-#             if data_mode=='7m':
-#                 del hdrcopy['PC'+i+'_'+j]
-#             else:
-#                 del hdrcopy['PC0'+i+'_0'+j]
-#     hdr = hdrcopy
-    
     # Choose appropriate resolution for SFR map, changing 'conbeam' to match it if necessary.
     res='7p5'
     if beam_arcsec > 7.5*u.arcsec and conbeam is not None:
         print('(galaxytools.info())     WARNING: Beam is '+str(beam_arcsec)+', and we want to convolve.')
-        print('                                  This will use a 15" SFR map instead!')
+        print('                                  This will use a 15" SFR map instead of 7.5"!')
         res='15'
+        if conbeam==7.5*u.arcsec:
+            print('(galaxytools.info())              We\'ll also use a 15" conbeam.')
+            conbeam = 15.*u.arcsec
     
     # Get SFR at this resolution.
     sfr = sfr_get(gal,hdr,res=res,band_uv=sfr_band_uv,band_ir=sfr_band_ir,autocorrect=sfr_autocorrect) 
     #     Not convolved yet, despite that being an option.
     
     if res=='7p5' and sfr is None and sfr_autocorrect==True:  # If 7.5" isn't found and we want to try lower res:
-        print('(galaxytools.info())              Will attempt a 15" SFR map instead!')
+        print('(galaxytools.info())     WARNING: 7.5" SFR map not found.\n\
+                                  Will attempt a 15" SFR map instead!')
         res='15'
         sfr = sfr_get(gal,hdr,res=res,band_uv=sfr_band_uv,band_ir=sfr_band_ir) # Try again with lower resolution.
     if res=='15' and sfr is not None:  # If a 15" SFR map was successful:
@@ -1926,9 +1963,10 @@ def info(gal,conbeam=None,data_mode='',sfr_band_uv='nuv',sfr_band_ir='w3',sfr_au
             conbeam=15.*u.arcsec
     # Get cube+mask!
     cube,bestcube = cube_get(gal,data_mode,return_best=True)
-    mask          = mask_get(gal,data_mode)
-    # Get peakvels!
-    peakvels = peakvels_get(gal,data_mode,cube,mask,True,False,bestcube)
+    if hasmask==True:
+        mask          = mask_get(gal,data_mode)
+        # Get peakvels!
+        peakvels = peakvels_get(gal,data_mode,cube,mask,True,False,bestcube)
     
     
     # CONVOLUTION, if enabled:
@@ -1936,8 +1974,11 @@ def info(gal,conbeam=None,data_mode='',sfr_band_uv='nuv',sfr_band_ir='w3',sfr_au
         hdr,I_mom0, I_tpeak, cube = cube_convolved(gal,conbeam,data_mode) # CONVOLVED moments, with their cube.
         if sfr is not None:
             sfr = convolve_2D(gal,hdr,sfr,conbeam)  # Convolved SFR map.
-
-    return hdr,beam,I_mom0,I_mom1,peakvels,I_tpeak,cube,mask,sfr
+    
+    if hasmask==True:
+        return hdr,beam,I_mom0,I_mom1,peakvels,I_tpeak,cube,mask,sfr
+    else:
+        return hdr,beam,I_mom0,I_mom1,I_tpeak,cube,sfr
     
 def depletion(Sigma=None,sfr=None):
     '''
@@ -2028,8 +2069,12 @@ def map2D_to_1D(rad,maps,stride=1):
         maps[i] = np.ravel(maps[i])
     
     # Cleaning the maps!
+    maps_notempty = []
+    for i in range(0,len(maps)):
+        if np.sum(~np.isnan(maps[i]))>0:    # If the map isn't empty:
+            maps_notempty.append(maps[i])
     index = np.arange(rad.size)
-    index = index[ np.isfinite(rad1D*np.sum(maps,axis=0))]
+    index = index[ np.isfinite(rad1D*np.sum(maps_notempty,axis=0))]
     rad1D = rad1D[index][::stride]
     for i in range(0,len(maps)):
         maps[i] = maps[i][index][::stride]

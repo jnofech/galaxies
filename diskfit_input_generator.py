@@ -38,26 +38,28 @@ class silence:
 #    print("This will not be printed")
 
 def filename_get(name,data_mode='7m',mapmode='mom1',\
-                path7m ='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-LP/working_data/osu/',\
-                path12m='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-v1p0/',\
+                path7m  ='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-LP/working_data/osu/',\
+                path12m ='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-LP/delivery/broad_maps/',\
                 path7m_mask ='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-LP/working_data/osu/eros_masks/',\
-#                 path7m_mask ='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-LP/working_data/for_inspection/',\
-                path12m_mask='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-v1p0/',\
+                path12m_mask='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-LP/delivery/cubes/eros_masks/',\
                 folder_vpeak='jnofech_peakvels/',\
                 folder_hybrid='jnofech_mom1_hybrid/'):
     name = name.lower()
     gal = tools.galaxy(name.upper())
     if name.upper()=='NGC3239':
         raise ValueError('Bad galaxy.')
-    if data_mode == '7m':
+
+    if data_mode == '7m+tp':
+        print('tools.cube_get(): WARNING: Changing data_mode from 7m+tp to 7m. Will try to select 7m+tp regardless.')
         data_mode = '7m'
     elif data_mode in ['12m','12m+7m']:
         data_mode = '12m+7m'  
+    elif data_mode in ['12m+tp','12m+7m+tp']:
+        print('tools.cube_get(): WARNING: Changing data_mode from '+data_mode+' to 12m. Will try to select 12m+tp regardless.')
+        data_mode = '12m+7m'
     elif data_mode.lower() in ['both','hybrid']:
-        data_mode = 'hybrid'  
-    elif data_mode=='':
-        print('No data_mode set. Defaulted to 12m+7m.')
-        data_mode = '12m+7m' 
+        data_mode = 'hybrid'
+        
     if mapmode in ['mom1']:
         mapmode='mom1'
     elif mapmode in ['peakvels','vpeak']:
@@ -77,7 +79,6 @@ def filename_get(name,data_mode='7m',mapmode='mom1',\
         filename_7mtp_e = name+'_'+data_mode_temp+'+tp_co21_e'+mapmode+'.fits'   # 7m+tp emom1. Ideal.
         filename_7m     = name+'_'+data_mode_temp+   '_co21_'+mapmode+'.fits'    # 7m mom1. Less reliable.
         filename_7m_e   = name+'_'+data_mode_temp+   '_co21_e'+mapmode+'.fits'   # 7m emom1. Less reliable.
-#         print(filename_7m)
         if os.path.isfile(path+filename_7mtp):
             filename_map  = filename_7mtp
             if os.path.isfile(path+filename_7mtp_e):
@@ -92,7 +93,7 @@ def filename_get(name,data_mode='7m',mapmode='mom1',\
             best_map_7m='7m'
         else:
             filename_map  = "7m "+mapmode+" MISSING!"
-            filename_emap = "7m "+mapmode+" MISSING!"
+            filename_emap = "7m e"+mapmode+" MISSING!"
             raise ValueError('Neither 7m nor 7m+tp '+mapmode+' map found!')
         best_map = best_map_7m
     if data_mode in ['12m+7m','hybrid']:
@@ -101,16 +102,28 @@ def filename_get(name,data_mode='7m',mapmode='mom1',\
         elif mapmode=='peakvels':
             path = path12m_mask+folder_vpeak
         data_mode_temp = '12m+7m'
-        filename_12mtp = name+'_co21_'+data_mode_temp+'+tp_'+mapmode+'.fits'  # (?) Will all new maps have '+tp'?
-        best_map_12m = '12m+7m+tp'                                    # (?) ^
-        best_map = best_map_12m
+        filename_12mtp   = name+'_'+data_mode_temp+'+tp_co21_broad_'+mapmode+'.fits'    # 12m+tp mom1. Ideal.
+        filename_12mtp_e = name+'_'+data_mode_temp+'+tp_co21_broad_e'+mapmode+'.fits'   # 12m+tp emom1. Ideal.
+        filename_12m     = name+'_'+data_mode_temp+   '_co21_broad_'+mapmode+'.fits'    # 12m mom1. Less reliable.
+        filename_12m_e   = name+'_'+data_mode_temp+   '_co21_broad_e'+mapmode+'.fits'   # 12m emom1. Less reliable.
+        print(path+filename_12mtp)
         if os.path.isfile(path+filename_12mtp):
             filename_map  = filename_12mtp
-            filename_emap = name+'_co21_'+data_mode_temp+'+tp_e'+mapmode+'.fits'
+            if os.path.isfile(path+filename_12mtp_e):
+                filename_emap = filename_12mtp_e
+            else:
+                print('filename_get() WARNING : '+filename_12mtp_e+' not found!')
+                filename_emap = 'None'
+            best_map_12m='12m+7m+tp'
+        elif os.path.isfile(path+filename_12m):
+            filename_map  = filename_12m
+            filename_emap = name+'_'+data_mode_temp+   '_co21_e'+mapmode+'.fits'
+            best_map_12m='12m+7m'
         else:
             filename_map  = "12m "+mapmode+" MISSING!"
-            filename_emap = "12m "+mapmode+" MISSING!"
-            raise ValueError('No 12m+tp '+mapmode+' found!')
+            filename_emap = "12m e"+mapmode+" MISSING!"
+            raise ValueError('Neither 12m+7m nor 12m+7m+tp '+mapmode+' map found!')
+        best_map = best_map_12m
     if data_mode=='hybrid':
         best_map = 'hybrid_'+best_map_7m+'&'+best_map_12m
         filename = name+'_co21_'+best_map+'_'+mapmode+'.fits'
@@ -123,7 +136,7 @@ def filename_get(name,data_mode='7m',mapmode='mom1',\
             filename_emap = name+'_co21_'+best_map+'_e'+mapmode+'.fits'
         else:
             filename_map  = "Hybrid "+mapmode+" MISSING!"
-            filename_emap = "Hybrid "+mapmode+" MISSING!"
+            filename_emap = "Hybrid e"+mapmode+" MISSING!"
             raise ValueError('No hybrid '+mapmode+' found!')
         
     return filename_map, filename_emap
@@ -134,16 +147,16 @@ def gen_input(name,data_mode='7m',mapmode='mom1',errors=False,errors_exist=False
               xcen  =np.nan,ycen  =np.nan,PA  =np.nan,eps  =np.nan,vsys  =np.nan,bar_PA  =np.nan,\
               xcen_p=np.nan,ycen_p=np.nan,PA_p=np.nan,eps_p=np.nan,vsys_p=np.nan,bar_PA_p=np.nan,\
               alteration=[None]*8,\
+              bar_fit_try=False,\
+              toggle_beam_smear=False,\
               toggle_xcen_over=None,toggle_PA_over=None,toggle_eps_over=None,toggle_vsys_over=None,\
               toggle_bar_PA_over=None,\
               customcoords='phil',\
               debug=False,\
-              bar_fit_try=True,\
-              path7m ='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-LP/working_data/osu/',\
-              path12m='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-v1p0/',\
+              path7m  ='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-LP/working_data/osu/',\
+              path12m ='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-LP/delivery/broad_maps/',\
               path7m_mask ='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-LP/working_data/osu/eros_masks/',\
-#              path7m_mask ='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-LP/working_data/for_inspection/',\
-              path12m_mask='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-v1p0/',\
+              path12m_mask='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-LP/delivery/cubes/eros_masks/',\
               folder_vpeak='jnofech_peakvels/',\
               folder_hybrid='jnofech_mom1_hybrid/',\
               diskfit_folder='diskfit_procedural/'):
@@ -230,7 +243,8 @@ def gen_input(name,data_mode='7m',mapmode='mom1',errors=False,errors_exist=False
         data_mode_temp = '12m+7m'
     else:
         data_mode_temp = data_mode
-    hdr, beam, x, I_mom1, x, x, x, x, x = tools.info(gal,None,data_mode_temp)
+#    hdr, beam, x, I_mom1, x, x, x, x, x = tools.info(gal,None,data_mode_temp)
+    hdr, beam, x, I_mom1, x, x, x, = tools.info(gal,None,data_mode_temp,hasmask=False)
     I_mom1 = tools.mom1_get(gal,data_mode)
     
     # Initialize!
@@ -257,6 +271,7 @@ def gen_input(name,data_mode='7m',mapmode='mom1',errors=False,errors_exist=False
     pixscale = "{0:4.2f}".format(pixsizes_arcsec.value)                # Num. of arcsecs per pixel. Unused.
     m = str(2)                                                         # Harmonic order of noncirc flow.
     delta_ISM = str((6.0*u.km/u.s).value)                              # "Doesn't change much to my knowledge."
+    beam_smear = "{0:4.2f}".format(beam*u.deg/pixsizes_deg)            # Beam smearing size. Rule of thumb: should be <0.5x the ring spacing.
     
     # Get PA, Eps, Vsys
     PA_1 = "{0:4.2f}".format(gal.position_angle.value)
@@ -264,11 +279,10 @@ def gen_input(name,data_mode='7m',mapmode='mom1',errors=False,errors_exist=False
     vsys_1 = "{0:4.2f}".format(gal.vsys.value)
     
     # Bars!
-    bar_PA_1, bar_incl_1, bar_R = tools.bar_info_get(gal,data_mode,radii='pixels',folder='/media/jnofech/BigData/galaxies/drive_tables/')       # Returns bar radii in pixels.
+    bar_PA_1, bar_R = tools.bar_info_get(gal,data_mode,radii='pixels',folder='/media/jnofech/BigData/galaxies/drive_tables/')       # Returns bar radii in pixels.
     if bar_PA_1 is not np.nan and bar_fit_try==True:
         has_bar = 'T'
         toggle_bar_PA = 'T'
-        bar_eps_1 = 1.-np.cos(bar_incl_1)                              # Unused? I guess diskfit doesn't care about bar eps?
         bar_PA_1 = "{0:4.2f}".format(bar_PA_1.value)
     else:
         has_bar = 'F'
@@ -299,8 +313,8 @@ def gen_input(name,data_mode='7m',mapmode='mom1',errors=False,errors_exist=False
     if ~np.isnan(vsys_p):
         vsys_1 = "{0:4.2f}".format(vsys_p.value)
     if ~np.isnan(bar_PA_p):
-        print('!!! DEBUG! '+str(bar_PA_p))
-        print('!!! DEBUG! '+str(bar_PA_1))
+#        print('!!! DEBUG! '+str(bar_PA_p))
+#        print('!!! DEBUG! '+str(bar_PA_1))
         bar_PA_1 = "{0:4.2f}".format(bar_PA_p.value)
     
     # Toggle parameter-fitting!
@@ -386,13 +400,13 @@ def gen_input(name,data_mode='7m',mapmode='mom1',errors=False,errors_exist=False
     # Convert bar PA to disk plane, instead of galactic plane!
     # `bar_PA_diskplane = bar_PA - PA`
     bar_PA_diskplane = float(bar_PA_1) - float(PA_1)
-    print('!!! DEBUG! '+str(bar_PA_1))
-    print('!!! DEBUG! '+str(PA_1))
+#    print('!!! DEBUG! '+str(bar_PA_1))
+#    print('!!! DEBUG! '+str(PA_1))
     if bar_PA_diskplane<=-180.:
         bar_PA_diskplane = bar_PA_diskplane+360.
     elif bar_PA_diskplane>180.:
         bar_PA_diskplane = bar_PA_diskplane-360.
-    print('!!! DEBUG! '+str(bar_PA_diskplane))
+#    print('!!! DEBUG! '+str(bar_PA_diskplane))
     # Use as string. Set 45deg if bar fit is disabled.
     if bar_fit_try==True:
         bar_PA_diskplane = "{0:4.2f}".format(bar_PA_diskplane)
@@ -508,6 +522,8 @@ def gen_input(name,data_mode='7m',mapmode='mom1',errors=False,errors_exist=False
     if name.lower()=='ngc7456':
         n_radii = 18
 
+    if toggle_beam_smear==True:
+        n_radii = int((radius_max_pix - radius_min_pix)/(2*float(beam_smear)))
     radius_pix = np.linspace(radius_min_pix,radius_max_pix,n_radii)                  # Radius array, in pixels.
 #     print(radius_pix)
 
@@ -532,7 +548,7 @@ def gen_input(name,data_mode='7m',mapmode='mom1',errors=False,errors_exist=False
     text.append("T F                     #(?) Inner interp toggle + radial flow toggle. Avoid bar.")
     text.append(""+toggle_vsys+" "+vsys_1+" "+delta_ISM+" 25.0       # Vsys")
     text.append("F T T T 90 0 0          #(?) Warp? (CANNOT use with Bar or Radial flow fits!)")
-    text.append("0.                                         ")
+    text.append(""+('0.')*(toggle_beam_smear==False)+(beam_smear*toggle_beam_smear)+"                      # Beam Smearing    ")
     text.append("-0.01 -0.01                                ")
     text.append(""+toggle_emom1+" -50 5 -1.0                               ")
     text.append("F                       # Verbose          ")
@@ -540,6 +556,8 @@ def gen_input(name,data_mode='7m',mapmode='mom1',errors=False,errors_exist=False
 #    print('(!!!!) NOTE: bar_R multiplied by 4/5 as a test.')
     for j in range(radius_pix.size):
         text.append("{0:4.2f}".format(radius_pix[j]))
+    print('!!! TEMP !!! : Ring distance = '+str((radius_max_pix-radius_min_pix)/n_radii))
+    print('!!! TEMP !!! : Beam size = '+('0.')*(toggle_beam_smear==False)+(beam_smear*toggle_beam_smear))
     input_str = ''
     for i in range(0,len(text)):
         input_str = input_str+text[i]+'\n'
@@ -793,11 +811,12 @@ def read_output(name,iteration=1,alteration=[False]*8,verbose=True,\
     
     # Bar PA
     if ~np.isnan(bar_PA_out):
+        bar_nooutput = False      # Only needed for converting input/output bar_PA between disk/sky values.
         if verbose==True:
             print(name+'\'s BAR PA : '+"{0:4.2f}".format(bar_PA_in)+' -> '+"{0:4.2f}".format(bar_PA_out)+'.')
-        if (180.*u.deg - np.abs(np.abs(bar_PA_in - bar_PA_out) - 180.*u.deg))>=999*u.deg:
+        if (180.*u.deg - np.abs(np.abs(bar_PA_in - bar_PA_out) - 180.*u.deg))>=20*u.deg:
             if verbose==True:
-                print('    Bad Bar PA off by >999deg! Result discarded.')
+                print('    Bad Bar PA off by >20deg! Result discarded.')
             bar_PA_out = bar_PA_in
         else:
             if verbose==True:
@@ -815,7 +834,7 @@ def read_output(name,iteration=1,alteration=[False]*8,verbose=True,\
     
     # Convert bar PA to galactic plane, instead of disk plane!
     # `bar_PA_diskplane = bar_PA - PA`
-    print('!!! DEBUG!'+' Output bar PA (should be DISK):'+str(bar_PA_out))
+#    print('!!! DEBUG!'+' Output bar PA (should be DISK):'+str(bar_PA_out))
     bar_PA_galacticplane    = bar_PA_out + PA_out
     if bar_PA_galacticplane<=0*u.deg:
         bar_PA_galacticplane = bar_PA_galacticplane+360*u.deg
@@ -824,7 +843,7 @@ def read_output(name,iteration=1,alteration=[False]*8,verbose=True,\
     bar_PA_out = bar_PA_galacticplane
     if bar_nooutput==True:
         bar_PA_in = bar_PA_out
-    print('!!! DEBUG!'+' Output bar PA (should be GALACTIC):'+str(bar_PA_out))
+#    print('!!! DEBUG!'+' Output bar PA (should be GALACTIC):'+str(bar_PA_out))
     
     # Warp Radius (min radius at which warp begins)
     if ~np.isnan(r_w_out):
@@ -1023,7 +1042,7 @@ def read_all_outputs(gal,mode='params',diskfit_folder='diskfit_procedural/',use_
     PA_orig   = gal.position_angle
     incl_orig = gal.inclination
     vsys_orig = gal.vsys
-    bar_PA, bar_incl, bar_R = tools.bar_info_get(gal,'7m',radii='arcsec',customPA=True,\
+    bar_PA, bar_R = tools.bar_info_get(gal,'7m',radii='arcsec',customPA=True,\
                  folder='/media/jnofech/BigData/galaxies/drive_tables/',fname='TABLE_Environmental_masks - Parameters')
     print('dig.read_all_outputs(): WARNING: Only considering 7m data for bar information!')
     if np.isnan(vsys_orig):
