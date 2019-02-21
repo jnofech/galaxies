@@ -37,13 +37,21 @@ class silence:
 #with silence():
 #    print("This will not be printed")
 
-def filename_get(name,data_mode='7m',mapmode='mom1',\
+def filename_get(name,data_mode='7m',mapmode='mom1',force_same_res=False,\
                 path7m  ='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-LP/working_data/osu/',\
                 path12m ='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-LP/delivery/broad_maps/',\
                 path7m_mask ='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-LP/working_data/osu/eros_masks/',\
                 path12m_mask='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-LP/delivery/cubes/eros_masks/',\
                 folder_vpeak='jnofech_peakvels/',\
                 folder_hybrid='jnofech_mom1_hybrid/'):
+    '''
+    force_same_res(=False) : bool
+        If velocity map data exists but the error map does not
+        (e.g. 7m+tp data but 7m error data), this toggles 
+        whether to ignore the error map in favour of higher-res
+        data (False) or force the data to a lower res so they 
+        match (True).
+    '''
     name = name.lower()
     gal = tools.galaxy(name.upper())
     if name.upper()=='NGC3239':
@@ -79,21 +87,31 @@ def filename_get(name,data_mode='7m',mapmode='mom1',\
         filename_7mtp_e = name+'_'+data_mode_temp+'+tp_co21_e'+mapmode+'.fits'   # 7m+tp emom1. Ideal.
         filename_7m     = name+'_'+data_mode_temp+   '_co21_'+mapmode+'.fits'    # 7m mom1. Less reliable.
         filename_7m_e   = name+'_'+data_mode_temp+   '_co21_e'+mapmode+'.fits'   # 7m emom1. Less reliable.
+        filename_map = None
+        filename_emap = None
         if os.path.isfile(path+filename_7mtp):
             filename_map  = filename_7mtp
             if os.path.isfile(path+filename_7mtp_e):
                 filename_emap = filename_7mtp_e
+                best_map_7m='7m+tp'
             else:
-                print('filename_get() WARNING : '+filename_7mtp_e+' not found!')
-                filename_emap = 'None'
-            best_map_7m='7m+tp'
-        elif os.path.isfile(path+filename_7m):
+                print('filename_get() WARNING : '+filename_7mtp+' found, but '+filename_7mtp_e+' not found!')
+                if force_same_res==False:
+                    filename_emap = 'None'
+                    best_map_7m='7m+tp'
+                elif force_same_res==True:
+                    print('filename_get()         : Forcing 7m+tp data to 7m data, so it matches 7m error.')
+                    filename_map = None
+                    filename_emap = None          # Blank slate; trying again.
+                    best_map_7m = 'None'
+        if os.path.isfile(path+filename_7m) and (filename_map is None):
             filename_map  = filename_7m
             filename_emap = name+'_'+data_mode_temp+   '_co21_e'+mapmode+'.fits'
             best_map_7m='7m'
-        else:
+        if filename_map is None and filename_emap is None:
             filename_map  = "7m "+mapmode+" MISSING!"
             filename_emap = "7m e"+mapmode+" MISSING!"
+            best_map_7m = 'None'
             raise ValueError('Neither 7m nor 7m+tp '+mapmode+' map found!')
         best_map = best_map_7m
     if data_mode in ['12m+7m','hybrid']:
@@ -106,22 +124,31 @@ def filename_get(name,data_mode='7m',mapmode='mom1',\
         filename_12mtp_e = name+'_'+data_mode_temp+'+tp_co21_broad_e'+mapmode+'.fits'   # 12m+tp emom1. Ideal.
         filename_12m     = name+'_'+data_mode_temp+   '_co21_broad_'+mapmode+'.fits'    # 12m mom1. Less reliable.
         filename_12m_e   = name+'_'+data_mode_temp+   '_co21_broad_e'+mapmode+'.fits'   # 12m emom1. Less reliable.
-        print(path+filename_12mtp)
+        filename_map = None
+        filename_emap = None
         if os.path.isfile(path+filename_12mtp):
             filename_map  = filename_12mtp
             if os.path.isfile(path+filename_12mtp_e):
                 filename_emap = filename_12mtp_e
+                best_map_12m='12m+7m+tp'
             else:
-                print('filename_get() WARNING : '+filename_12mtp_e+' not found!')
-                filename_emap = 'None'
-            best_map_12m='12m+7m+tp'
-        elif os.path.isfile(path+filename_12m):
+                print('filename_get() WARNING : '+filename_12mtp+' found, but '+filename_12mtp_e+' not found!')
+                if force_same_res==False:
+                    filename_emap = 'None'
+                    best_map_12m='12m+7m+tp'
+                elif force_same_res==True:
+                    print('filename_get()         : Forcing 12m+7m+tp data to 12m+7m data, so it matches 12m+7m error.')
+                    filename_map = None
+                    filename_emap = None          # Blank slate; trying again.
+                    best_map_12m = 'None'
+        if os.path.isfile(path+filename_12m) and (filename_map is None):
             filename_map  = filename_12m
             filename_emap = name+'_'+data_mode_temp+   '_co21_e'+mapmode+'.fits'
             best_map_12m='12m+7m'
-        else:
+        if filename_map is None and filename_emap is None:
             filename_map  = "12m "+mapmode+" MISSING!"
             filename_emap = "12m e"+mapmode+" MISSING!"
+            best_map_12m = 'None'
             raise ValueError('Neither 12m+7m nor 12m+7m+tp '+mapmode+' map found!')
         best_map = best_map_12m
     if data_mode=='hybrid':
@@ -233,7 +260,7 @@ def gen_input(name,data_mode='7m',mapmode='mom1',errors=False,errors_exist=False
     
     
     # Find filenames for map and error map!
-    filename_map, filename_emap = filename_get(name,data_mode,mapmode,path7m,path12m,path7m_mask,path12m_mask,\
+    filename_map, filename_emap = filename_get(name,data_mode,mapmode,False,path7m,path12m,path7m_mask,path12m_mask,\
                                                folder_vpeak,folder_hybrid)
             
 

@@ -1,20 +1,37 @@
 import numpy as np
 import math
+import emcee
 
 import astropy.io.fits as fits
 import astropy.units as u
 import astropy.wcs as wcs
 from astropy.wcs import WCS
+from astropy.table import Table
+from spectral_cube import SpectralCube
 from galaxies.galaxies import Galaxy
+from astropy.coordinates import SkyCoord, Angle, FK5
 
 from scipy import ndimage, misc, interpolate, optimize
 from scipy.interpolate import BSpline, make_lsq_spline
 from pandas import DataFrame, read_csv
 import pandas as pd
-import os.path
+import statsmodels.formula.api as smf
+import os
 
 # Import my own code
 import galaxytools as tools
+import diskfit_input_generator as dig
+
+# Import Erik's code
+from rotcurves import MCurc             # Performs MC sampling to improve URC fits and find errors
+
+class silence:
+    def __enter__(self):
+        self._original_stdout = sys.stdout
+        sys.stdout = open(os.devnull, 'w')
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        sys.stdout.close()
+        sys.stdout = self._original_stdout
 
 
 def rotcurve(gal,data_mode='',mapmode='mom1',\
@@ -318,6 +335,104 @@ def rotcurve_smooth(R,vrot,R_e,vrot_e=None,smooth='spline',knots=8,returnparams=
         raise ValueError('Invalid smoothing mode.')
     
     return R, vrot
+    
+def MCurc_sample(gal,data_mode,mapmode='mom1',smooth='universal'):
+    '''
+    Runs Erik's MCurc code on the mom1 map
+    and DiskFit-fitted parameters of a
+    galaxy.
+    
+    Parameters:
+    -----------
+    gal : Galaxy
+    data_mode(='') : str
+        '7m'            - uses 7m data.
+        '12m'           - 12m data.
+        'hybrid' (not implemented?)  - bofa
+    mapmode : str
+        I cannot guarantee what happens
+        if you don't choose 'mom1'.
+    smooth : str
+        Totally optional and totally doesn't
+        have to be 'universal'.
+    '''
+    if mapmode!='mom1':
+        print('rc.MCurc_sample : WARNING: Did not select \'mom1\' as mapmode. Might get wonky.')
+    rcmode = mapmode+'_'+data_mode       # RC is generated from <mapmode> data at <data_mode> resolution.
+    diskfit_folder='diskfit_auto_'+rcmode+'/'
+    if smooth!='universal':
+        raise ValueError('You did not use \'universal\' as the data_mode. \nWTF YOU DOING YA DINGUS ITS LITERALLY THERE IN THE FUNCTION NAME')
+    if isinstance(gal,Galaxy):
+        name = gal.name.lower()
+    elif isinstance(gal,str):
+        name = gal.lower()
+        print('rc.MCurc_sample() - Creating new galaxy object for '+name)
+        gal = tools.galaxy(name)
+    else:
+        raise ValueError("'gal' must be a str or galaxy!")
+    
+    print(name+' starting...')
+
+    # Check if data and error BOTH have 7m+tp data, or otherwise.
+    mom1_name, emom1_name = dig.filename_get(name,data_mode,mapmode,force_same_res=False)
+    if emom1_name is not 'None':       # If data&error have matching maps, i.e. everything's good:
+        mom1path = tools.mom1_get(gal,data_mode,return_mode='path')
+        emom1path = tools.emom1_get(gal,data_mode,return_mode='path')
+        mom1 = MCurc.read_moment(mom1path)
+        emom1 = MCurc.read_moment(emom1path)
+    else:
+        print(name+' has no error map! Cannot continue.')
+        return
+        # Skip this galaxy entirely! Can't do diddly squat with no error map.
+
+    # Read diskfit_output!
+    xcen_out,ycen_out,PA_out,eps_out,incl_out,vsys_out,bar_PA_out = dig.read_all_outputs(gal,\
+                                                                    'params',diskfit_folder,True)
+    RAcen, Deccen = tools.pixels_to_wcs(gal,data_mode,xcen_out,ycen_out)
+    # ^ Should be identical to gal.center_position, aside from rounding errors. But this is used
+    #   in case we change DiskFit to NOT fix center coords.
+    
+    
+    ## This block shows how to run the code.
+    Center = SkyCoord(RAcen, Deccen,\
+                      frame='fk5',unit=(u.degree, u.degree))
+    Distance = gal.distance
+    Vsys = vsys_out                      #
+    PA = PA_out.value                    # PA in (unitless) radians.
+    Inc = incl_out.value                 # Inc in (unitless) radians.
+
+    # Get smoothed rotcurve!
+    R, vrot, R_e, vrot_e = gal.rotcurve(data_mode,mapmode)
+    R,vrot_s,vmax,rmax,A = rotcurve_smooth(R,vrot,R_e,vrot_e,smooth,returnparams=True)
+    rmax = rmax/1000.   # Convert from pc to kpc (I assume).
+
+    p = np.array([vmax, rmax, A, PA, Inc])      # p[0],p[1],p[2] are URC fit parameters!
+    lp = MCurc.lp_urc(p, mom1, emom1, Center, Distance, Vsys, Inc)
+
+    nwalkers = 30
+    ndim = 4
+
+    p0 = np.zeros((nwalkers, ndim))
+    p0[:, 0] = p[0] + np.random.randn(nwalkers)
+    p0[:, 1] = p[1] + 0.01 * np.random.randn(nwalkers)
+    p0[:, 2] = p[2] + 0.01 * np.random.randn(nwalkers)
+    p0[:, 3] = p[3] + 0.01 * np.random.randn(nwalkers)
+    # p0[:, 4] = p[4] + 0.01 * np.random.randn(nwalkers)
+
+    arglist = [mom1, emom1, Center, Distance, Vsys, Inc]
+    sampler = emcee.EnsembleSampler(nwalkers,
+                                   ndim,
+                                   MCurc.lp_urc,
+                                   args=arglist, threads=6)
+    pos, prob, state = sampler.run_mcmc(p0, 200)
+#     sampler.reset()
+#     pos, prob, state = sampler.run_mcmc(p0, 500)
+    print('... '+name+' finished!')
+    
+    np.savez('MCurc_save/'+galaxies_list[i]+'_'+data_mode+'_'+smooth+'.npz',\
+             egg1=[vmax,rmax,A],\
+             egg2=pos,egg3=prob,egg4=state[1])
+    return
 
 def epicycles(R,vrot):
     '''
@@ -668,3 +783,227 @@ def linewidth_iso(gal,beam=None,smooth='spline',knots=8,data_mode='',mapmode='mo
     #sigma_gal_spline = interpolate.BSpline(t,c,k, extrapolate=False)     # Cubic interpolation of sigma_gal(R).
     
     return sigma_gal
+    
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+# ~~~~~~~    MC UNIVERSAL ROTCURVE SAMPLING   ~~~~~~~
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+def MCurc_sample(gal,data_mode,mapmode='mom1',smooth='universal'):
+    '''
+    Runs Erik's MCurc code on the mom1 map
+    and DiskFit-fitted parameters of a
+    galaxy.
+    
+    Parameters:
+    -----------
+    gal : Galaxy
+    data_mode(='') : str
+        '7m'            - uses 7m data.
+        '12m'           - 12m data.
+        'hybrid' (not implemented?)  - bofa
+    mapmode : str
+        I cannot guarantee what happens
+        if you don't choose 'mom1'.
+    smooth : str
+        Totally optional and totally doesn't
+        have to be 'universal'.
+    '''
+    if mapmode!='mom1':
+        print('rc.MCurc_sample : WARNING: Did not select \'mom1\' as mapmode. Might get wonky.')
+    rcmode = mapmode+'_'+data_mode       # RC is generated from <mapmode> data at <data_mode> resolution.
+    diskfit_folder='diskfit_auto_'+rcmode+'/'
+    if smooth!='universal':
+        raise ValueError('You did not use \'universal\' as the data_mode. \nWTF YOU DOING YA DINGUS ITS LITERALLY THERE IN THE FUNCTION NAME')
+    if isinstance(gal,Galaxy):
+        name = gal.name.lower()
+    elif isinstance(gal,str):
+        name = gal.lower()
+        print('rc.MCurc_sample() - Creating new galaxy object for '+name)
+        gal = tools.galaxy(name)
+    else:
+        raise ValueError("'gal' must be a str or galaxy!")
+    
+    print(name+' starting...')
+
+    # Check if data and error BOTH have 7m+tp data, or otherwise.
+    mom1_name, emom1_name = dig.filename_get(name,data_mode,mapmode,force_same_res=False)
+    # ^ force_same_res=False causes filename_get() to leave emom1_name as 'None' if 7m+tp mom1 exists
+    #    but 7m+tp emom1 does not. It basically checks whether error maps are available for the best
+    #    mom1 map, which DiskFit was run on. 
+    if emom1_name is not 'None':       # If data&error have matching maps, i.e. everything's good:
+        mom1path = tools.mom1_get(gal,data_mode,return_mode='path')
+        emom1path = tools.emom1_get(gal,data_mode,return_mode='path')
+        mom1 = MCurc.read_moment(mom1path)
+        emom1 = MCurc.read_moment(emom1path)
+    else:
+        print(name+' has no error map! Cannot continue.')
+        return
+        # Skip this galaxy entirely! Can't do diddly squat with no error map.    
+    
+    ## This block shows how to run the code.
+    gal2 = tools.galaxy(name.upper(),diskfit_output=True)
+    Distance = gal2.distance.to(u.Mpc)
+    Center = gal2.center_position
+    Vsys = gal2.vsys
+    PA = (gal2.position_angle.to(u.rad)).value
+    Inc = (gal2.inclination.to(u.rad)).value
+
+    # Get smoothed rotcurve!
+    R, vrot, R_e, vrot_e = gal.rotcurve(data_mode,mapmode)
+    R,vrot_s,vmax,rmax,A = rotcurve_smooth(R,vrot,R_e,vrot_e,smooth,returnparams=True)
+    rmax = rmax/1000.   # Convert from pc to kpc, as MCurc.lp_urc's "R" is in kpc.
+
+    p = np.array([vmax, rmax, A, PA, Inc])      # p[0],p[1],p[2] are URC fit parameters!
+    lp = MCurc.lp_urc(p, mom1, emom1, Center, Distance, Vsys, Inc)
+
+    nwalkers = 30
+    ndim = 4
+
+    p0 = np.zeros((nwalkers, ndim))
+    p0[:, 0] = p[0] + np.random.randn(nwalkers)
+    p0[:, 1] = p[1] + 0.01 * np.random.randn(nwalkers)
+    p0[:, 2] = p[2] + 0.01 * np.random.randn(nwalkers)
+    p0[:, 3] = p[3] + 0.01 * np.random.randn(nwalkers)
+    # p0[:, 4] = p[4] + 0.01 * np.random.randn(nwalkers)
+
+    arglist = [mom1, emom1, Center, Distance, Vsys, Inc]
+    sampler = emcee.EnsembleSampler(nwalkers,
+                                   ndim,
+                                   MCurc.lp_urc,
+                                   args=arglist, threads=6)
+    pos, prob, state = sampler.run_mcmc(p0, 200)
+    sampler.reset()
+    pos, prob, state = sampler.run_mcmc(pos, 500)
+    sampler.reset()
+    
+    vmax_mc = np.median(pos[:,0])
+    rmax_mc = np.median(pos[:,1])
+    A_mc    = np.median(pos[:,2])
+    PA_mc   = np.median(pos[:,3])
+    print('... '+name+' finished!')
+    
+    np.savez('MCurc_save/'+name.upper()+'_'+data_mode+'_'+smooth+'.npz',\
+             egg1=[vmax_mc,rmax_mc,A_mc,PA_mc],\
+             egg2=[vmax,rmax,A],\
+             egg3=pos,egg4=prob,egg5=state[1])
+    return
+
+def urc(R, p0, p1, p2):
+    '''
+    Fit Eq. 14 from Persic & Salucci 1995.
+    Note that "R" and "p1" must be in the same units.
+    '''
+    p = np.array([p0, p1, p2])
+    x = R / p[1]
+    vmodel = p[0] * ((0.72 + 0.44 * np.log(p[2]))
+                     * (1.95 * x**1.22)/(x**2 + 0.78**2)
+                     + 1.6 * np.exp(-0.4 * p[2])
+                     * (x**2/(x**2 + 1.5**2 * p[2]**2)))
+    return(vmodel)
+    
+def RC(gal,data_mode,mapmode='mom1',smooth='universal',mode='diskfit',returnparams=False, debug=False):
+    '''
+    Returns rotcurve specified by
+    mapmode and smooth, in various
+    stages of smoothing.
+    (Only mapmode='mom1' and smooth='universal'
+    are supported for now!)
+    
+    Parameters:
+    -----------
+    gal : Galaxy
+    data_mode(='') : str
+        '7m'            - uses 7m data.
+        '12m'           - 12m data.
+        'hybrid' (not implemented?)
+    mapmode : str
+        Only 'mom1' supported
+    smooth : str
+        Only 'universal' supported
+    mode='diskfit' : str
+        - "diskfit"     : grabs raw DiskFit rotcurve.
+        - "smooth(ed)"  : grabs smoothed rotcurve.
+        - "(MC)urc" : grabs final, MC-improved rotcurve.
+    returnparams=False : bool
+        - False : Returns rotcurve.
+        - True  : Returns rotcurve with fit parameters.
+    debug=False : bool
+        Returns 'pos', 'prob', 'state' and nothing more.
+        
+    Returns:
+    --------
+    mode='diskfit':
+        R,vrot,R_e,vrot_e
+          ^BSpline
+    mode='smoothed':
+        R,vrot_s(,vmax,rmax,A)
+          ^BSpline     ^pc
+    mode='MCurc'
+        R,vrot_mc(,vmax,rmax,A)
+          ^BSpline      ^pc
+    '''
+    if mapmode!='mom1':
+        print('rc.MCurc_sample : WARNING: Did not select \'mom1\' as mapmode. Might get wonky.')
+    rcmode = mapmode+'_'+data_mode       # RC is generated from <mapmode> data at <data_mode> resolution.
+    diskfit_folder='diskfit_auto_'+rcmode+'/'
+    if smooth!='universal':
+        raise ValueError('You did not use \'universal\' as the data_mode. \nWTF YOU DOING YA DINGUS ITS LITERALLY THERE IN THE FUNCTION NAME')
+    
+    if isinstance(gal,Galaxy):
+        name = gal.name.lower()
+    elif isinstance(gal,str):
+        name = gal.lower()
+        print('rc.RC() - Creating new galaxy object for '+name)
+        gal = tools.galaxy(name)
+    else:
+        raise ValueError("'gal' must be a str or galaxy!")
+    
+    R,vrot,R_e,vrot_e = gal.rotcurve(data_mode,mapmode)
+    if mode=='diskfit':
+        return R,vrot,R_e,vrot_e
+    
+    R,vrot_s,vmax,rmax,A = rotcurve_smooth(R,vrot,R_e,vrot_e,smooth=smooth,returnparams=True)
+    if mode.lower() in ['smooth','smoothed']:
+        if returnparams==False:
+            return R,vrot_s
+        else:
+            return R,vrot_s,vmax,rmax,A
+    
+    # Read saved MC-URC sampling results
+    if os.path.isfile('MCurc_save/'+name.upper()+'_'+data_mode+'_'+smooth+'.npz'):
+        MCurc_data = np.load('MCurc_save/'+name.upper()+'_'+data_mode+'_'+smooth+'.npz')
+        params_MC     = MCurc_data['egg1']
+        params_smooth = MCurc_data['egg2']
+        pos   = MCurc_data['egg3']
+        prob  = MCurc_data['egg4']
+        state = MCurc_data['egg5']
+        print('Figure out what pos, prob, and state do!')
+        if debug==True:
+            return pos,prob,state
+    else:
+        print('rc.MC(): WARNING - MCurc_save/'+name.upper()+'_'+data_mode+'_'+smooth+'.npz does not exist!')
+        if debug==True:
+            return None,None,None
+        if returnparams==False:
+            return R,None
+        else:
+            return R,None,None,None,None
+    
+    if [vmax,rmax/1000.,A]!=list(params_smooth):
+        print('Current URC params (r in pc): '+str([vmax,rmax,A]))
+        print('Saved URC params (r in kpc):  '+str(params_smooth))
+        print('rc.RC() - WARNING: Current URC parameters do not match the ones saved in MCurc_save/'+name.upper()+'_'+data_mode+'_'+smooth+'.npz!')
+        print('                   The saved file is outdated and needs to be re-generated.')
+        
+    # Get finalized rotcurve
+    vmax_mc,rmax_mc,A_mc,PA_mc = params_MC[0],params_MC[1]*1000.,params_MC[2],params_MC[3]  # Convert kpc to pc
+    # BSpline interpolation of vrot_mc(R)
+    K=3                # Order of the BSpline
+    t,c,k = interpolate.splrep(R,urc(R,vmax_mc,rmax_mc,A_mc),s=0,k=K)
+    vrot_mc = interpolate.BSpline(t,c,k, extrapolate=False)  # Final smoothed rotcurve, after MC improvements.
+    
+    if mode.lower() in ['mc', 'urc', 'mcurc']:
+        if returnparams==False:
+            return R,vrot_mc
+        else:
+            return R,vrot_mc,vmax_mc,rmax_mc,A_mc
