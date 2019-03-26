@@ -260,7 +260,7 @@ def gen_input(name,data_mode='7m',mapmode='mom1',errors=False,errors_exist=False
     
     
     # Find filenames for map and error map!
-    filename_map, filename_emap = filename_get(name,data_mode,mapmode,False,path7m,path12m,path7m_mask,path12m_mask,\
+    filename_map, filename_emap = filename_get(name,data_mode,mapmode,True,path7m,path12m,path7m_mask,path12m_mask,\
                                                folder_vpeak,folder_hybrid)
             
 
@@ -644,7 +644,7 @@ def read_output(name,iteration=1,alteration=[False]*8,verbose=True,\
     else:
         print('WARNING: '+name+'\'s output file missing!')
         return np.nan,np.nan,np.nan,np.nan,np.nan,np.nan,np.nan,np.nan,np.nan,np.nan,\
-               np.nan,np.nan,np.nan,np.nan,np.nan,np.nan,np.nan,np.nan,np.nan,np.nan,\
+               np.nan,np.nan,np.nan,np.nan,np.nan,np.nan,np.nan,np.nan,np.nan,\
                alteration,np.nan
 
     # Initializing. Do not touch.
@@ -657,9 +657,9 @@ def read_output(name,iteration=1,alteration=[False]*8,verbose=True,\
 
     # Pick out all the input/output parameters!
     # Also, pick out the rotcurves with error bars.
-    PA_in,PA_out,eps_in,eps_out,incl_in,incl_out,xcen_in,xcen_out,ycen_in,ycen_out,\
+    PA_in,PA_out,eps_in,eps_out,incl_out,xcen_in,xcen_out,ycen_in,ycen_out,\
         bar_PA_in,bar_PA_out,vsys_in,vsys_out,delta_ISM_in,r_w_in,r_w_out,\
-        warp_eps_in,warp_eps_out,warp_PA_in,warp_PA_out,chi2_out = [np.nan]*22
+        warp_eps_in,warp_eps_out,warp_PA_in,warp_PA_out,chi2_out = [np.nan]*21
 
     alteration_label = ['PA_altered','eps_altered','coords_altered','vsys_altered','bar_PA_altered',\
                         'r_w_altered','warp_eps_altered','warp_PA_altered']
@@ -675,7 +675,6 @@ def read_output(name,iteration=1,alteration=[False]*8,verbose=True,\
                 PA_in = float(lines[i][36:43])*u.deg
             if lines[i][0:9]=='disk eps:':
                 eps_in = float(lines[i][36:43])
-                incl_in = (np.arccos(1.-eps_in)*u.rad).to(u.deg)
             if lines[i][0:24]=='x,y center (data units):':
                 xcen_in = float(lines[i][36:43])
                 ycen_in = float(lines[i][44:51])
@@ -716,7 +715,7 @@ def read_output(name,iteration=1,alteration=[False]*8,verbose=True,\
 #                 alteration[alteration_label.index('coords_altered')] = True
             if lines[i][0:23]=='Non-axisymm phib (disk ':
                 bar_PA_out = float(lines[i][36:43])*u.deg
-                alteration[alteration_label.index('bar_PA_altered')] = True
+#                 alteration[alteration_label.index('bar_PA_altered')] = True
             if lines[i][0:11]=='Vsys (km/s)':
                 vsys_out = lines[i][36:43]
                 if vsys_out!='*******':
@@ -781,7 +780,7 @@ def read_output(name,iteration=1,alteration=[False]*8,verbose=True,\
                 print('    Good eps = '+"{0:4.2f}".format(eps_out)+'.')
             alteration[alteration_label.index('eps_altered')] = True
     else:
-        incl_out = incl_in
+        incl_out = np.nan
         eps_out = eps_in
         if alteration[alteration_label.index('eps_altered')]==True:
             if verbose==True:
@@ -945,8 +944,8 @@ def read_output(name,iteration=1,alteration=[False]*8,verbose=True,\
             print(' (!) WARNING : chi^2 = '+"{0:4.2f}".format(chi2_out)+'.')
             
     return xcen_out,ycen_out, PA_out, eps_out, incl_out, vsys_out, bar_PA_out, r_w_out, warp_PA_out, warp_eps_out,\
-           xcen_in, ycen_in,  PA_in,  eps_in,  incl_in,  vsys_in,  bar_PA_in,  r_w_in,  warp_PA_in,  warp_eps_in,\
-            alteration, chi2_out
+           xcen_in, ycen_in,  PA_in,  eps_in,  vsys_in,  bar_PA_in,  r_w_in,  warp_PA_in,  warp_eps_in,\
+           alteration, chi2_out
     # ^ Edit later on if need be.
     
 def checkcustom(name,iteration=1,diskfit_folder='diskfit_procedural/'):
@@ -1099,22 +1098,39 @@ def read_all_outputs(gal,mode='params',diskfit_folder='diskfit_procedural/',use_
     while True:
         with silence():
             xcen_out,ycen_out, PA_out, eps_out, incl_out, vsys_out, bar_PA_out, r_w_out, warp_PA_out, warp_eps_out,\
-            xcen_in, ycen_in,  PA_in,  eps_in,  incl_in,  vsys_in,  bar_PA_in,  r_w_in,  warp_PA_in,  warp_eps_in,\
+            xcen_in, ycen_in,  PA_in,  eps_in,  vsys_in,  bar_PA_in,  r_w_in,  warp_PA_in,  warp_eps_in,\
             alteration, chi2_out = read_output(name,iteration=iteration,alteration=alteration,\
-                                                      custom_input=custom_input,diskfit_folder=diskfit_folder)    
+                                               custom_input=custom_input,diskfit_folder=diskfit_folder)
             if [xcen_out,ycen_out, PA_out, eps_out, incl_out, vsys_out, bar_PA_out, r_w_out, warp_PA_out, warp_eps_out,\
-                xcen_in, ycen_in,  PA_in,  eps_in,  incl_in,  vsys_in,  bar_PA_in,  r_w_in,  warp_PA_in,  warp_eps_in,\
+                xcen_in, ycen_in,  PA_in,  eps_in,  vsys_in,  bar_PA_in,  r_w_in,  warp_PA_in,  warp_eps_in,\
                 alteration, chi2_out] == [np.nan,np.nan,np.nan,np.nan,np.nan,np.nan,np.nan,np.nan,np.nan,np.nan,\
-                np.nan,np.nan,np.nan,np.nan,np.nan,np.nan,np.nan,np.nan,np.nan,np.nan,\
+                np.nan,np.nan,np.nan,np.nan,np.nan,np.nan,np.nan,np.nan,np.nan,\
                 alteration,np.nan] and iteration!=0:
                 iteration = iteration-1
             elif iteration<=0:
-                print('plotting : NOT A SINGLE OUTPUT FILE DETECTED! Very sad.')
+                print('dig.read_all_outputs() : NOT A SINGLE OUTPUT FILE DETECTED! Very sad.')
+                iteration_incl = iteration
                 break
             else:
+                iteration_incl = iteration
+                if np.isnan(incl_out):
+                    print('dig.read_all_outputs() : Fitted params found, but still need the Incl value without rounding errors!')
+                    # This code will keep reading through lower and lower 'iterations' until an "incl_out" is found. This is the highest iteration at which eps is fitted.
+                    while True:
+                        x,x, x, x, incl_out, x, x, x, x, x,\
+                        x, x,  x,  x,  x,  x,  x,  x,  x,\
+                        x, x = read_output(name,iteration=iteration_incl,alteration=alteration,\
+                                           custom_input=custom_input,diskfit_folder=diskfit_folder)
+                        if np.isnan(incl_out) and iteration_incl!=0:
+                            iteration_incl = iteration_incl-1
+                        elif iteration_incl<=0:
+                            print('dig.read_all_outputs() : Outputs found, but no inclination value was found for some reason. Ideally, this should never happen!')
+                            break
+                        else:
+                            break
                 break
     if iteration!=0:
-        print('Output for iteration='+str(iteration)+' successful!')
+        print('Output for iteration='+str(iteration)+' successful! (eps fitted in iteration_incl='+str(iteration_incl)+')')
     else:
         print('plotting : OUTPUT FILE NOT DETECTED! Reverting to previous output file.')
     

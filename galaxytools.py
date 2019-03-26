@@ -23,7 +23,8 @@ import copy
 import os
 import csv
 
-def galaxy(name,customPA=True,custominc=True,customcoords='phil',diskfit_output=False,data_mode='7m',mapmode='mom1'):
+def galaxy(name,customPA=True,custominc=True,customcoords='phil',\
+           diskfit_output=False,data_mode='7m',mapmode='mom1'):
     '''
     Creates Galaxy object.
     Features kinematic PA and a quick
@@ -32,6 +33,9 @@ def galaxy(name,customPA=True,custominc=True,customcoords='phil',diskfit_output=
     Parameters:
     -----------
     customPA=True : bool
+        Can also be a string, 'LSQ' or 'MC', to
+        grab fitted PA from the LSQ-URC or MC-URC.
+        Requires data_mode='7m', mapmode='mom1'.
     custominc=True : bool
     customcoords='phil' : bool OR str
         customcoords='p','phil','philipp':
@@ -51,8 +55,29 @@ def galaxy(name,customPA=True,custominc=True,customcoords='phil',diskfit_output=
         
     '''
     gal = Galaxy(name.upper())
+    if isinstance(customPA,str):
+        # Check if data_mode and mapmode are good:
+        if (data_mode=='7m' and mapmode=='mom1')==False:
+            raise ValueError('tools.galaxy() : Cannot use "customPA='+customPA+'" unless data_mode=\'7m\', mapmode=\'mom1\'.')
+        if customPA.lower() in ['lsq', 'lsqurc', 'ls', 'lsurc']:
+            MCurc_savefile='LSQ_'
+        elif customPA.lower() in ['mc', 'urc', 'mcurc']:
+            MCurc_savefile='MC_'
+        else:
+            raise ValueError('"'+customPA+'" is not a valid "customPA"! See header for details.')
+        smooth = 'universal'
+        print('tools.galaxy(customPA='+customPA+') : smooth=universal is assumed.')
+        if os.path.isfile('MCurc_save/'+MCurc_savefile+name.upper()+'_'+data_mode+'_'+smooth+'.npz'):
+            MCurc_data = np.load('MCurc_save/'+MCurc_savefile+name.upper()+'_'+data_mode+'_'+smooth+'.npz')
+            params_MC     = MCurc_data['egg1']
+            PA_MC = (params_MC[3]*u.rad).to(u.deg)
+            # ^ This will overwrite any other PA at the end of this function.
+        else:
+            print('rc.MC(): WARNING - MCurc_save/'+MCurc_savefile+name.upper()+'_'+data_mode+'_'+smooth+'.npz does not exist!')
+            customPA = True
     if customPA==True:
         gal.position_angle  = PA_get(gal)
+        
     if custominc==True:
         gal.inclination     = incl_get(gal)
     if customcoords==True or customcoords=='True' or customcoords=='true':
@@ -115,6 +140,9 @@ def galaxy(name,customPA=True,custominc=True,customcoords='phil',diskfit_output=
         gal.position_angle = PA_out
         gal.inclination = incl_out
         gal.vsys = vsys_out
+    
+    if isinstance(customPA,str):
+        gal.position_angle = PA_MC
     return gal
     
 def mom0_get(gal,data_mode='',\
@@ -1893,7 +1921,7 @@ def TFvelocity_get(gal):
     
     return TFv
 
-def bar_info_get(gal,data_mode,radii='arcsec',customPA=True,\
+def bar_info_get(gal,data_mode,radii='arcsec',customPA=True,check_has_bar=False,\
                  folder='drive_tables/',fname='TABLE_Environmental_masks - Parameters'):
     '''
     Gets the bar information for a specified
@@ -1913,6 +1941,12 @@ def bar_info_get(gal,data_mode,radii='arcsec',customPA=True,\
         'arcsec' (Default)
         'pc', 'parsec'
         'pix', 'pixel', 'pixels'  <- Dependent on data_mode
+    check_has_bar(=False) : bool
+        Checks whether the galaxy has
+        a bar, returning 'Yes',
+        'No', or 'Uncertain' (not in list).
+        Replaces other outputs.
+        
     Returns:
     --------
     bar_PA : Quantity
@@ -1920,8 +1954,9 @@ def bar_info_get(gal,data_mode,radii='arcsec',customPA=True,\
     bar_R : Quantity
         Radius of bar, in parsec.
     
-    Will return 'None, None, None' if
-    galaxy does not have a bar.
+    Will return 'np.nan,np.nan' if
+    galaxy does not have a bar, or if
+    galaxy is not in the list.
     '''
     if isinstance(gal,Galaxy):
         name = gal.name.lower()
@@ -1948,7 +1983,10 @@ def bar_info_get(gal,data_mode,radii='arcsec',customPA=True,\
         # Abort if there's no bar.
         if '-999' in [bar_axisratio,bar_PA,bar_R]:
             print('tools.bar_info_get() : '+name.upper()+' does not have a bar!')
-            return np.nan, np.nan
+            if check_has_bar==False:
+                return np.nan, np.nan
+            else:
+                return 'No'
         bar_axisratio = float(bar_axisratio)   # Axis ratio == a/b == 1/cos(i)
 #         bar_incl = (np.arccos(1./bar_axisratio)*u.rad).to(u.deg)     # (!!!) Delete this? Bars don't have inclinations, ya donut
         bar_PA = float(bar_PA)*u.deg           # PA (deg)
@@ -1971,7 +2009,32 @@ def bar_info_get(gal,data_mode,radii='arcsec',customPA=True,\
 #                bar_PA = 999.*u.deg
     else:
         print('tools.bar_info_get() : '+name.upper()+' not in '+fname+'.csv!')
-        return np.nan, np.nan
+        if check_has_bar==False:
+            return np.nan, np.nan
+        else:
+            return 'Uncertain'
+    
+    # Convert R to desired units!
+    if radii=='arcsec':
+        bar_R = bar_R            # Bar radius, in ".
+    else:
+        pixsizes_deg = wcs.utils.proj_plane_pixel_scales(wcs.WCS(hdr))[0]*u.deg # Pixel width, in deg.
+        pixsizes_arcsec = pixsizes_deg.to(u.arcsec)                             # Pixel width, in arcsec.
+        pixsizes_rad = pixsizes_deg.to(u.rad)                                   # Pixel width, in radians.
+        bar_R_pix = bar_R / pixsizes_arcsec                                     # Bar radius, in pixels.
+        if radii in ['parsec','pc']:
+            pcperpixel = pixsizes_rad.value*gal.distance.to(u.pc)    # Pixel width, in pc.
+            bar_R = bar_R_pix * pcperpixel        # Bar radius, in pc.
+        elif radii in ['kpc']:
+            kpcperpixel = pixsizes_rad.value*gal.distance.to(u.kpc)    # Pixel width, in kpc.
+            bar_R = bar_R_pix * kpcperpixel       # Bar radius, in kpc.
+        elif radii in ['pix','pixel','pixels']:
+            bar_R = bar_R_pix                     # Bar radius, in pixels.
+            
+    if check_has_bar==False:
+        return bar_PA, bar_R
+    else:
+        return 'Yes'
     
     # Convert R to desired units!
     if radii=='arcsec':

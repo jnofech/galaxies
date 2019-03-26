@@ -901,7 +901,8 @@ def urc(R, p0, p1, p2):
                      * (x**2/(x**2 + 1.5**2 * p[2]**2)))
     return(vmodel)
     
-def RC(gal,data_mode,mapmode='mom1',smooth='universal',mode='diskfit',returnparams=False, debug=False):
+def RC(gal,data_mode,mapmode='mom1',smooth='universal',mode='diskfit',returnparams=False, debug=False,\
+       path='/media/jnofech/BigData/galaxies/'):
     '''
     Returns rotcurve specified by
     mapmode and smooth, in various
@@ -923,7 +924,8 @@ def RC(gal,data_mode,mapmode='mom1',smooth='universal',mode='diskfit',returnpara
     mode='diskfit' : str
         - "diskfit"     : grabs raw DiskFit rotcurve.
         - "smooth(ed)"  : grabs smoothed rotcurve.
-        - "(MC)urc" : grabs final, MC-improved rotcurve.
+        - "(LSQ)urc" : grabs final, lsq-improved rotcurve.
+        - "(MC)urc" : grabs final, MC-improved rotcurve (different method).
     returnparams=False : bool
         - False : Returns rotcurve.
         - True  : Returns rotcurve with fit parameters.
@@ -938,6 +940,9 @@ def RC(gal,data_mode,mapmode='mom1',smooth='universal',mode='diskfit',returnpara
     mode='smoothed':
         R,vrot_s(,vmax,rmax,A)
           ^BSpline     ^pc
+    mode='LSQurc'
+        R,vrot_lsq(,vmax,rmax,A)
+          ^BSpline      ^pc
     mode='MCurc'
         R,vrot_mc(,vmax,rmax,A)
           ^BSpline      ^pc
@@ -970,40 +975,48 @@ def RC(gal,data_mode,mapmode='mom1',smooth='universal',mode='diskfit',returnpara
             return R,vrot_s,vmax,rmax,A
     
     # Read saved MC-URC sampling results
-    if os.path.isfile('MCurc_save/'+name.upper()+'_'+data_mode+'_'+smooth+'.npz'):
-        MCurc_data = np.load('MCurc_save/'+name.upper()+'_'+data_mode+'_'+smooth+'.npz')
+    if mode.lower() in ['lsq', 'lsqurc', 'ls', 'lsurc']:
+        savefile='LSQ_'
+    elif mode.lower() in ['mc', 'urc', 'mcurc']:
+        savefile='MC_'
+    else:
+        raise ValueError('"'+mode+'" is not a valid "mode"! See header for details.')
+    
+    if os.path.isfile(path+'MCurc_save/'+savefile+name.upper()+'_'+data_mode+'_'+smooth+'.npz'):
+        MCurc_data = np.load(path+'MCurc_save/'+savefile+name.upper()+'_'+data_mode+'_'+smooth+'.npz')
         params_MC     = MCurc_data['egg1']
         params_smooth = MCurc_data['egg2']
-        pos   = MCurc_data['egg3']
-        prob  = MCurc_data['egg4']
-        state = MCurc_data['egg5']
-        print('Figure out what pos, prob, and state do!')
-        if debug==True:
-            return pos,prob,state
+        if savefile=='MC_':
+            pos   = MCurc_data['egg3']
+            prob  = MCurc_data['egg4']
+            state = MCurc_data['egg5']
+            print('Figure out what pos, prob, and state do!')
+            if debug==True:
+                return pos,prob,state
     else:
-        print('rc.MC(): WARNING - MCurc_save/'+name.upper()+'_'+data_mode+'_'+smooth+'.npz does not exist!')
-        if debug==True:
+        print('rc.MC(): WARNING - MCurc_save/'+savefile+name.upper()+'_'+data_mode+'_'+smooth+'.npz does not exist!')
+        if savefile=='MC_' and debug==True:
             return None,None,None
         if returnparams==False:
             return R,None
         else:
             return R,None,None,None,None
-    
+
     if [vmax,rmax/1000.,A]!=list(params_smooth):
         print('Current URC params (r in pc): '+str([vmax,rmax,A]))
         print('Saved URC params (r in kpc):  '+str(params_smooth))
         print('rc.RC() - WARNING: Current URC parameters do not match the ones saved in MCurc_save/'+name.upper()+'_'+data_mode+'_'+smooth+'.npz!')
         print('                   The saved file is outdated and needs to be re-generated.')
-        
+
     # Get finalized rotcurve
-    vmax_mc,rmax_mc,A_mc,PA_mc = params_MC[0],params_MC[1]*1000.,params_MC[2],params_MC[3]  # Convert kpc to pc
-    # BSpline interpolation of vrot_mc(R)
-    K=3                # Order of the BSpline
-    t,c,k = interpolate.splrep(R,urc(R,vmax_mc,rmax_mc,A_mc),s=0,k=K)
-    vrot_mc = interpolate.BSpline(t,c,k, extrapolate=False)  # Final smoothed rotcurve, after MC improvements.
+    vmax_f,rmax_f,A_f,PA_f = params_MC[0],params_MC[1]*1000.,params_MC[2],params_MC[3]  # Convert kpc to pc
     
-    if mode.lower() in ['mc', 'urc', 'mcurc']:
-        if returnparams==False:
-            return R,vrot_mc
-        else:
-            return R,vrot_mc,vmax_mc,rmax_mc,A_mc
+    # BSpline interpolation of vrot_f(R)
+    K=3                # Order of the BSpline
+    t,c,k = interpolate.splrep(R,urc(R,vmax_f,rmax_f,A_f),s=0,k=K)
+    vrot_f = interpolate.BSpline(t,c,k, extrapolate=False)  # Final smoothed rotcurve, after MC improvements.
+
+    if returnparams==False:
+        return R,vrot_f
+    else:
+        return R,vrot_f,vmax_f,rmax_f,A_f
