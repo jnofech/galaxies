@@ -4,6 +4,7 @@ import matplotlib.pyplot as plt
 import astropy.io.fits as fits
 import astropy.units as u
 import astropy.wcs as wcs
+from astropy.io.fits import HDUList, PrimaryHDU
 from astropy.wcs import WCS
 from astropy.table import Table
 from astropy.convolution import convolve_fft, Gaussian2DKernel
@@ -153,7 +154,10 @@ def mom0_get(gal,data_mode='',\
     return_mode:
         'data': returns data (DEFAULT)
         'path': returns path to mom0 file
-        'hdu': returns fits.open(path)
+        'hdul': returns HDU list
+                (i.e. fits.open(path))
+        'hdu': returns HDU
+               (i.e. fits.open(path)[0])
     '''
     if isinstance(gal,Galaxy):
         name = gal.name.lower()
@@ -162,12 +166,12 @@ def mom0_get(gal,data_mode='',\
     else:
         raise ValueError("'gal' must be a str or galaxy!")
     if data_mode == '7m+tp':
-        print('tools.cube_get(): WARNING: Changing data_mode from 7m+tp to 7m. Will try to select 7m+tp regardless.')
+        print('tools.mom0_get(): WARNING: Changing data_mode from 7m+tp to 7m. Will try to select 7m+tp regardless.')
         data_mode = '7m'
     elif data_mode in ['12m','12m+7m']:
         data_mode = '12m+7m'
     elif data_mode in ['12m+tp','12m+7m+tp']:
-        print('tools.cube_get(): WARNING: Changing data_mode from '+data_mode+' to 12m. Will try to select 12m+tp regardless.')
+        print('tools.mom0_get(): WARNING: Changing data_mode from '+data_mode+' to 12m. Will try to select 12m+tp regardless.')
         data_mode = '12m+7m'
 
     # Get the mom0 file. In K km/s.
@@ -178,39 +182,45 @@ def mom0_get(gal,data_mode='',\
         filename_7m   = name+'_'+data_mode+   '_co21_mom0.fits'    # 7m mom0. Less reliable.
         if os.path.isfile(path+filename_7mtp):
             finalpath = path+filename_7mtp
-            I_mom0_hdu = fits.open(path+filename_7mtp)
+            I_mom0_hdul = fits.open(path+filename_7mtp)
         elif os.path.isfile(path+filename_7m):
             finalpath = path+filename_7m
             print('No 7m+tp mom0 found. Using 7m mom0 instead.')
-            I_mom0_hdu = fits.open(path+filename_7m)
+            I_mom0_hdul = fits.open(path+filename_7m)
     elif data_mode=='12m+7m':
         path = path12m
         filename_12mtp = name+'_'+data_mode+'+tp_co21_broad_mom0.fits'    # 12m+tp mom0. Ideal.
         filename_12m   = name+'_'+data_mode+   '_co21_broad_mom0.fits'    # 12m mom0. Less reliable.
         if os.path.isfile(path+filename_12mtp):
             finalpath = path+filename_12mtp
-            I_mom0_hdu = fits.open(path+filename_12mtp)
+            I_mom0_hdul = fits.open(path+filename_12mtp)
         elif os.path.isfile(path+filename_12m):
             finalpath = path+filename_12m
             print('No 12m+7m+tp mom0 found. Using 12m+7m mom0 instead.')
-            I_mom0_hdu = fits.open(path+filename_12m)
+            I_mom0_hdul = fits.open(path+filename_12m)
     else:
         print('WARNING: Invalid data_mode-- No mom0 was found!')
         I_mom0 = None
         return I_mom0
-    if I_mom0_hdu is None:
+    if I_mom0_hdul is None:
         print('WARNING: No mom0 was found!')
         finalpath=None
-        return I_mom0_hdu
+        return I_mom0_hdul
+
+    # Clean the header!
+    I_mom0_hdul[0].data    # <-- This is necessary for some reason. The HDUL won't have any data otherwise.
+    I_mom0_hdul[0].header = hdr_clean(I_mom0_hdul[0].header)
     
     if return_mode=='data':
-        return I_mom0_hdu[0].data
+        return I_mom0_hdul[0].data
     elif return_mode=='path':
         return finalpath
-    elif return_mode in ['hdu','hdul']:
-        return I_mom0_hdu
+    elif return_mode.lower() in ['hdul','hdulist','hdu_list']:
+        return I_mom0_hdul
+    elif return_mode.lower() in ['hdu']:
+        return I_mom0_hdul[0]
     else:
-        print('tools.mom0_get() : Invalid "return_mode"! Must be "data", "path", or "hdu".')
+        print('tools.mom0_get() : Invalid "return_mode"! Must be "data", "path", or "hdu(l)".')
 
 def mom1_get(gal,data_mode='',return_best=False, verbose=True,\
              return_mode='data',\
@@ -218,10 +228,16 @@ def mom1_get(gal,data_mode='',return_best=False, verbose=True,\
              path12m='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-LP/delivery/broad_maps/',\
              folder_hybrid='jnofech_mom1_hybrid/'):
     '''
+    return_best:
+        False: returns mom1 (see return_mode for format)
+        True:  returns mom1 (see return_mode for format), best_emom1 (str)
     return_mode:
         'data': returns data (DEFAULT)
         'path': returns path to mom1 file
-        'hdu': returns fits.open(path)
+        'hdul': returns HDU list
+                (i.e. fits.open(path))
+        'hdu': returns HDU
+               (i.e. fits.open(path)[0])
     '''
     if isinstance(gal,Galaxy):
         name = gal.name.lower()
@@ -230,12 +246,12 @@ def mom1_get(gal,data_mode='',return_best=False, verbose=True,\
     else:
         raise ValueError("'gal' must be a str or galaxy!")
     if data_mode == '7m+tp':
-        print('tools.cube_get(): WARNING: Changing data_mode from 7m+tp to 7m. Will try to select 7m+tp regardless.')
+        print('tools.mom1_get(): WARNING: Changing data_mode from 7m+tp to 7m. Will try to select 7m+tp regardless.')
         data_mode = '7m'
     elif data_mode in ['12m','12m+7m']:
         data_mode = '12m+7m'
     elif data_mode in ['12m+tp','12m+7m+tp']:
-        print('tools.cube_get(): WARNING: Changing data_mode from '+data_mode+' to 12m. Will try to select 12m+tp regardless.')
+        print('tools.mom1_get(): WARNING: Changing data_mode from '+data_mode+' to 12m. Will try to select 12m+tp regardless.')
         data_mode = '12m+7m'
     elif data_mode.lower() in ['both','hybrid']:
         data_mode = 'hybrid'
@@ -263,7 +279,7 @@ def mom1_get(gal,data_mode='',return_best=False, verbose=True,\
             best_mom1_7m='7m'
         else:
             best_mom1_7m = 'None'
-        I_mom1_hdu = I_mom1_7m
+        I_mom1_hdul = I_mom1_7m
         best_mom1 = best_mom1_7m
     if data_mode in ['12m+7m','hybrid']:
         data_mode_name = '12m+7m'
@@ -285,7 +301,7 @@ def mom1_get(gal,data_mode='',return_best=False, verbose=True,\
         else:
             finalpath = None
             best_mom1_12m = 'None'
-        I_mom1_hdu = I_mom1_12m
+        I_mom1_hdul = I_mom1_12m
         best_mom1 = best_mom1_12m
     if data_mode=='hybrid':
         # Fix both of their headers!
@@ -313,16 +329,16 @@ def mom1_get(gal,data_mode='',return_best=False, verbose=True,\
         # SAVE!
         hdr['BUNIT'] = 'km  s-1 '  # Write this instead of 'KM/S  '.
         # Save header and data into a .fits file, if specified!
-        hdu      = [fits.PrimaryHDU(I_mom1_hybrid,header=hdr),'Dummy list entry, so that I_mom1=hdu[0].data.']
+        hdul     = [fits.PrimaryHDU(I_mom1_hybrid,header=hdr),'Dummy list entry, so that I_mom1=hdul[0].data.']
         filename = name+'_co21_'+best_mom1+'_mom1.fits'
         path = path12m+folder_hybrid
         finalpath = path+filename
         if os.path.isfile(path+filename)==False:
             print(path+filename)
-            hdu[0].writeto(path+filename)
+            hdul[0].writeto(path+filename)
         else:
             print('WARNING: Did not write to \''+path+filename+'\', as this file already exists.') 
-        I_mom1_hdu = hdu
+        I_mom1_hdul = hdul
 
     if data_mode not in ['7m','12m+7m','hybrid']:
         print('WARNING: Invalid data_mode-- No mom1 was found!')
@@ -339,10 +355,12 @@ def mom1_get(gal,data_mode='',return_best=False, verbose=True,\
             return I_mom1
         elif return_mode=='path':
             return finalpath
-        elif return_mode in ['hdu','hdul']:
-            return I_mom1_hdu
+        elif return_mode.lower() in ['hdul','hdulist','hdu_list']:
+            return I_mom1_hdul
+        elif return_mode.lower() in ['hdu']:
+            return I_mom1_hdul[0]
         else:
-            print('tools.mom1_get() : Invalid "return_mode"! Must be "data", "path", or "hdu".')
+            print('tools.mom1_get() : Invalid "return_mode"! Must be "data", "path", or "hdu(l)".') 
     
     
 def emom1_get(gal,data_mode='',return_best=False, verbose=True,\
@@ -351,10 +369,16 @@ def emom1_get(gal,data_mode='',return_best=False, verbose=True,\
              path12m='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-LP/delivery/broad_maps/',\
              folder_hybrid='jnofech_mom1_hybrid/'):
     '''
+    return_best:
+        False: returns emom1 (see return_mode for format)
+        True:  returns emom1 (see return_mode for format), best_emom1 (str)
     return_mode:
         'data': returns data (DEFAULT)
         'path': returns path to emom1 file
-        'hdu': returns fits.open(path)
+        'hdul': returns HDU list
+                (i.e. fits.open(path))
+        'hdu': returns HDU
+               (i.e. fits.open(path)[0])
     '''
     if isinstance(gal,Galaxy):
         name = gal.name.lower()
@@ -363,12 +387,12 @@ def emom1_get(gal,data_mode='',return_best=False, verbose=True,\
     else:
         raise ValueError("'gal' must be a str or galaxy!")
     if data_mode == '7m+tp':
-        print('tools.cube_get(): WARNING: Changing data_mode from 7m+tp to 7m. Will try to select 7m+tp regardless.')
+        print('tools.emom1_get(): WARNING: Changing data_mode from 7m+tp to 7m. Will try to select 7m+tp regardless.')
         data_mode = '7m'
     elif data_mode in ['12m','12m+7m']:
         data_mode = '12m+7m'
     elif data_mode in ['12m+tp','12m+7m+tp']:
-        print('tools.cube_get(): WARNING: Changing data_mode from '+data_mode+' to 12m. Will try to select 12m+tp regardless.')
+        print('tools.emom1_get(): WARNING: Changing data_mode from '+data_mode+' to 12m. Will try to select 12m+tp regardless.')
         data_mode = '12m+7m'
     elif data_mode.lower() in ['both','hybrid']:
         data_mode = 'hybrid'
@@ -396,7 +420,7 @@ def emom1_get(gal,data_mode='',return_best=False, verbose=True,\
             best_emom1_7m='7m'
         else:
             best_emom1_7m = 'None'
-        I_emom1_hdu = I_emom1_7m
+        I_emom1_hdul = I_emom1_7m
         best_emom1 = best_emom1_7m
     if data_mode in ['12m+7m','hybrid']:
         data_mode_name = '12m+7m'
@@ -418,7 +442,7 @@ def emom1_get(gal,data_mode='',return_best=False, verbose=True,\
         else:
             finalpath = None
             best_emom1_12m = 'None'
-        I_emom1_hdu = I_emom1_12m
+        I_emom1_hdul = I_emom1_12m
         best_emom1 = best_emom1_12m
     if data_mode=='hybrid':
         # Fix both of their headers!
@@ -446,16 +470,16 @@ def emom1_get(gal,data_mode='',return_best=False, verbose=True,\
         # SAVE!
         hdr['BUNIT'] = 'km  s-1 '  # Write this instead of 'KM/S  '.
         # Save header and data into a .fits file, if specified!
-        hdu      = [fits.PrimaryHDU(I_emom1_hybrid,header=hdr),'Dummy list entry, so that I_emom1=hdu[0].data.']
+        hdul     = [fits.PrimaryHDU(I_emom1_hybrid,header=hdr),'Dummy list entry, so that I_emom1=hdul[0].data.']
         filename = name+'_co21_'+best_emom1+'_emom1.fits'
         path = path12m+folder_hybrid
         finalpath = path+filename
         if os.path.isfile(path+filename)==False:
             print(path+filename)
-            hdu[0].writeto(path+filename)
+            hdul[0].writeto(path+filename)
         else:
             print('WARNING: Did not write to \''+path+filename+'\', as this file already exists.') 
-        I_emom1_hdu = hdu
+        I_emom1_hdul = hdul
 
     if data_mode not in ['7m','12m+7m','hybrid']:
         print('WARNING: Invalid data_mode-- No emom1 was found!')
@@ -472,10 +496,12 @@ def emom1_get(gal,data_mode='',return_best=False, verbose=True,\
             return I_emom1
         elif return_mode=='path':
             return finalpath
-        elif return_mode in ['hdu','hdul']:
-            return I_emom1_hdu
+        elif return_mode.lower() in ['hdul','hdulist','hdu_list']:
+            return I_emom1_hdul
+        elif return_mode.lower() in ['hdu']:
+            return I_emom1_hdul[0]
         else:
-            print('tools.emom1_get() : Invalid "return_mode"! Must be "data", "path", or "hdu".')
+            print('tools.emom1_get() : Invalid "return_mode"! Must be "data", "path", or "hdu(l)".') 
 
 def tpeak_get(gal,data_mode='',\
              return_mode='data',\
@@ -485,7 +511,10 @@ def tpeak_get(gal,data_mode='',\
     return_mode:
         'data': returns data (DEFAULT)
         'path': returns path to tpeak file
-        'hdu': returns fits.open(path)
+        'hdul': returns HDU list
+                (i.e. fits.open(path))
+        'hdu': returns HDU
+               (i.e. fits.open(path)[0])
     '''
     if isinstance(gal,Galaxy):
         name = gal.name.lower()
@@ -493,14 +522,14 @@ def tpeak_get(gal,data_mode='',\
         name = gal.lower()
     else:
         raise ValueError("'gal' must be a str or galaxy!")
-    if data_mode == '7m':
+    if data_mode == '7m+tp':
+        print('tools.tpeak_get(): WARNING: Changing data_mode from 7m+tp to 7m. Will try to select 7m+tp regardless.')
         data_mode = '7m'
     elif data_mode in ['12m','12m+7m']:
-        data_mode = '12m+7m'  
-    elif data_mode=='':
-        print('No data_mode set. Defaulted to 12m+7m.')
-        data_mode = '12m+7m' 
-
+        data_mode = '12m+7m'
+    elif data_mode in ['12m+tp','12m+7m+tp']:
+        print('tools.tpeak_get(): WARNING: Changing data_mode from '+data_mode+' to 12m. Will try to select 12m+tp regardless.')
+        data_mode = '12m+7m'    
     # Get the tpeak file. In K km/s.
     I_tpeak=None
     if data_mode=='7m':
@@ -509,22 +538,22 @@ def tpeak_get(gal,data_mode='',\
         filename_7m   = name+'_'+data_mode+   '_co21_tpeak.fits'    # 7m tpeak. Less reliable.
         if os.path.isfile(path+filename_7mtp):
             finalpath = path+filename_7mtp
-            I_tpeak_hdu = fits.open(path+filename_7mtp)
+            I_tpeak_hdul = fits.open(path+filename_7mtp)
         elif os.path.isfile(path+filename_7m):
             finalpath = path+filename_7m
             print('No 7m+tp tpeak found. Using 7m tpeak instead.')
-            I_tpeak_hdu = fits.open(path+filename_7m)
+            I_tpeak_hdul = fits.open(path+filename_7m)
     elif data_mode=='12m+7m':
         path = path12m
         filename_12mtp = name+'_'+data_mode+'+tp_co21_broad_tpeak.fits'    # 12m+tp tpeak. Ideal.
         filename_12m   = name+'_'+data_mode+   '_co21_broad_tpeak.fits'    # 12m tpeak. Less reliable.
         if os.path.isfile(path+filename_12mtp):
             finalpath = path+filename_12mtp
-            I_tpeak_hdu = fits.open(path+filename_12mtp)
+            I_tpeak_hdul = fits.open(path+filename_12mtp)
         elif os.path.isfile(path+filename_12m):
             finalpath = path+filename_12m
             print('No 12m+7m+tp tpeak found. Using 12m+7m tpeak instead.')
-            I_tpeak_hdu = fits.open(path+filename_12m)
+            I_tpeak_hdul = fits.open(path+filename_12m)
         else:
             print('tools.tpeak_get(): tpeak maps missing. Calculating tpeak directly from cube.')
             cube = (cube_get(gal,data_mode).unmasked_data[:]).to(u.K).value
@@ -532,23 +561,29 @@ def tpeak_get(gal,data_mode='',\
             I_tpeak = cube.max(axis=0)
             hdr = hdr_get(gal,data_mode,dim=2)
             hdr['BUNIT'] = 'K'
-            I_tpeak_hdu = [fits.PrimaryHDU(I_tpeak,header=hdr),'Dummy list entry, so that I_tpeak=I_tpeak_hdu[0].data.']
+            I_tpeak_hdul = [fits.PrimaryHDU(I_tpeak,header=hdr),'Dummy list entry, so that I_tpeak=I_tpeak_hdul[0].data.']
     else:
         print('WARNING: Invalid data_mode-- No tpeak was found!')
         I_tpeak = None
         return I_tpeak
-    if I_tpeak_hdu is None:
+    if I_tpeak_hdul is None:
         print('WARNING: No tpeak was found!')
-        return I_tpeak_hdu
+        return I_tpeak_hdul
 
+    # Clean the header!
+    I_tpeak_hdul[0].data    # <-- This is necessary for some reason. The HDUL won't have any data otherwise.
+    I_tpeak_hdul[0].header = hdr_clean(I_tpeak_hdul[0].header)
+    
     if return_mode=='data':
-        return I_tpeak_hdu[0].data
+        return I_tpeak_hdul[0].data
     elif return_mode=='path':
         return finalpath
-    elif return_mode in ['hdu','hdul']:
-        return I_tpeak_hdu
+    elif return_mode.lower() in ['hdul','hdulist','hdu_list']:
+        return I_tpeak_hdul
+    elif return_mode.lower() in ['hdu']:
+        return I_tpeak_hdul[0]
     else:
-        print('tools.tpeak_get() : Invalid "return_mode"! Must be "data", "path", or "hdu".')
+        print('tools.tpeak_get() : Invalid "return_mode"! Must be "data", "path", or "hdu(l)".') 
 
 def noise_get(gal,data_mode='',cube=None,noisypercent=0.15,\
              path7m ='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-LP/working_data/osu/',\
@@ -617,6 +652,36 @@ def hdr_get(gal,data_mode='',dim=3,\
     if hdr_found == False:
         print('WARNING: No header was found!')
         hdr = None
+    return hdr
+
+def hdr_clean(hdr):
+    '''
+    Cleans a 2D object's header,
+    by removing all of its '3D' thingies.
+    
+    NOTE: If you're cleaning the header of an
+        HDUlist and the data gets "wiped out"
+        upon cleaning the header, there's a
+        workaround.
+        Instead of:
+        "hdul.header = hdr_clean(hdul.header)",
+        consider:
+        "hdul.data
+         hdul.header = hdr_clean(hdul.header)".
+         
+         This prevents the data from vanishing upon
+         cleaning the header... for some reason.        
+    '''
+    if hdr['NAXIS']!=2:
+        raise ValueError('tools.hdr_clean() : hdr[\'NAXIS\']='+str(hdr['NAXIS'])+', when it should be 2 to be cleanable.')
+        
+    for kw in ['CTYPE3', 'CRVAL3', 'CDELT3', 'CRPIX3', 'CUNIT3']:
+        if kw in hdr:
+            del hdr[kw]
+    for i in ['1','2','3']:
+        for j in ['1', '2', '3']:
+            if ('PC'+i+'_'+j) in hdr:
+                del hdr['PC'+i+'_'+j]
     return hdr
             
 def cube_get(gal,data_mode,return_best=False,\
@@ -722,12 +787,18 @@ def mask_get(gal,data_mode,\
     return mask
 
 def sfr_get(gal,hdr=None,conbeam=None,res='7p5',band_uv='nuv',band_ir='w3',autocorrect=False,\
+            return_mode='data',\
             path='/media/jnofech/BigData/PHANGS/Archive/galex_and_wise/'):
     '''
     Recommended: NUV band + WISE Band 3.
     
+    The 'conbeam' is the resolution that
+        you want the SFR map to be convolved
+        to.
     The 'res' can be '7p5' or '15',
         i.e. 7.5" SFR data or 15" data.
+        It just selects which resolution
+        is read; it may be convolved afterwards.
     The band_uv can be 'fuv', 'nuv', or None.
     The band_ir can be 'w3' or 'w4', or None.
         For 7.5" (i.e. best) data, 'nuv'+'w3'
@@ -743,6 +814,10 @@ def sfr_get(gal,hdr=None,conbeam=None,res='7p5',band_uv='nuv',band_ir='w3',autoc
         Recommended to DISABLE if you need
         cubes to be convolved to same res.
         as SFR maps.
+    return_mode : str
+        'data': returns data (DEFAULT)
+        'hdu': returns HDU object for data
+               (NOT HDU list)
     '''
     if isinstance(gal,Galaxy):
         name = gal.name.lower()
@@ -766,20 +841,24 @@ def sfr_get(gal,hdr=None,conbeam=None,res='7p5',band_uv='nuv',band_ir='w3',autoc
             raise ValueError('(galaxytools.sfr_get())  Invalid \'band_ir\'. Must be \'w3\' or \'w4\'!')
     
     # Get the map for each band!
-    map_uv      = band_get(gal,hdr,band_uv,res,sfr_toggle=False)    # Galex NUV band.
-    map_ir      = band_get(gal,hdr,band_ir,res,sfr_toggle=False)     # WISE3 band.
+    hdr_copy = copy.copy(hdr)  # Copy of the original header.
+        # Certain steps of this code (e.g. getting the HDU from Projection object)
+        #   will alter the header, so this is necessary so that the global 'hdr'
+        #   doesn't get altered as well.
+    map_uv      = band_get(gal,hdr_copy,band_uv,res,sfr_toggle=False)    # Galex NUV band.
+    map_ir      = band_get(gal,hdr_copy,band_ir,res,sfr_toggle=False)     # WISE3 band.
     
     # Actually generate the SFR map!
     if map_uv is not None and map_ir is not None:
-        sfr     = (map_uv*uv_to_sfr + map_ir*ir_to_sfr).value   # Sum of SFR contributions, in Msun/yr/kpc**2.
+        sfr     = (map_uv*uv_to_sfr + map_ir*ir_to_sfr)   # Sum of SFR contributions, in Msun/yr/kpc**2.
     elif map_uv is None and band_uv==None and map_ir is not None and band_ir!=None:
         # If UV is intentionally missing:
-#         print('(galaxytools.sfr_get())  WARNING: Only considering IR ('+band_ir+') component.')
-        sfr     = (map_ir*ir_to_sfr).value             # SFR from just IR contribution.
+        print('(galaxytools.sfr_get())  WARNING: Only considering IR ('+band_ir+') component.')
+        sfr     = (map_ir*ir_to_sfr)             # SFR from just IR contribution.
     elif map_ir is None and band_ir==None and map_uv is not None and band_uv!=None:
         # If IR is intentionally missing:
-#         print('(galaxytools.sfr_get())  WARNING: Only considering UV ('+band_uv+') component.')
-        sfr     = (map_uv*uv_to_sfr).value             # SFR from just UV contribution.
+        print('(galaxytools.sfr_get())  WARNING: Only considering UV ('+band_uv+') component.')
+        sfr     = (map_uv*uv_to_sfr)             # SFR from just UV contribution.
     else:
         print('(galaxytools.sfr_get())  WARNING: No '+str(res)+'" '+str(band_uv)\
               +'+'+str(band_ir)+' SFR map was found!')
@@ -791,9 +870,21 @@ def sfr_get(gal,hdr=None,conbeam=None,res='7p5',band_uv='nuv',band_ir='w3',autoc
         sfr = sfr_get(gal,hdr,conbeam,band_uv,band_ir,'15',False,path)
         return sfr
 
-    if sfr is not None and conbeam!=None:
-        sfr = convolve_2D(gal,hdr,sfr,conbeam)  # Convolved SFR map.
-    return sfr
+    if sfr is not None:
+        sfr_hdu = sfr.hdu
+        if conbeam!=None:
+            # sfr is a Projection object right now. Turn it into an HDU, then convolve if necessary.
+            sfr_hdu = convolve_2D(gal,sfr_hdu,conbeam)  # Convolved SFR map.
+        if return_mode=='data':
+            return sfr_hdu.data
+        elif return_mode.lower() in ['hdu']:
+            print('tools.sfr_get() : WARNING: SFR HDU does not have a totally accurate header; BUNIT is missing, etc. The beam size (BMAJ) is accurate for the SFR map, though!')
+            return sfr_hdu
+        else:
+            print('tools.sfr_get() : Invalid "return_mode"! Must be "data" or "hdu".')
+    else:
+        return sfr
+
 
 def band_get(gal,hdr=None,band='',res='15',sfr_toggle=False,path='/media/jnofech/BigData/PHANGS/Archive/galex_and_wise/'):
     '''
@@ -843,7 +934,8 @@ def band_get(gal,hdr=None,band='',res='15',sfr_toggle=False,path='/media/jnofech
         return map2d
     
     if hdr!=None:
-        map2d_final = map2d.reproject(hdr)
+        map2d_final = map2d.reproject(hdr)    # NOTE: This gives the final Projection object the same header.
+                                              #   Any changes in 'hdr' will affect the object's header too!
     else:
         map2d_final = map2d
     return map2d_final
@@ -2123,11 +2215,13 @@ def info(gal,conbeam=None,data_mode='',sfr_band_uv='nuv',sfr_band_ir='w3',hasmas
         print('tools.cube_get(): WARNING: Changing data_mode from '+data_mode+' to 12m. Will try to select 12m+tp regardless.')
         data_mode = '12m+7m'
     
-    I_mom0 = mom0_get(gal,data_mode)
+    I_mom0 = mom0_get(gal,data_mode,return_mode='hdu')
     I_mom1 = mom1_get(gal,data_mode)
-    I_tpeak = tpeak_get(gal,data_mode)
+    I_tpeak = tpeak_get(gal,data_mode,return_mode='hdu')
     hdr = hdr_get(gal,data_mode,dim=2)
-    beam = hdr['BMAJ']                       # In degrees.
+    beam = hdr['BMAJ']                       # In degrees. This is beam size BEFORE convolution,
+                                             #   and we'll need this for the LoS velocity dispersion
+                                             #   (rc.linewidth_iso()).
     beam_arcsec = (beam*u.deg).to(u.arcsec)  # In arcsec. We want this to be LOWER than the SFR map's 7.5"
                                              #    beamwidth (i.e. higher resolution), but this often fails
                                              #    and we need to use 15" SFR maps instead.
@@ -2143,14 +2237,16 @@ def info(gal,conbeam=None,data_mode='',sfr_band_uv='nuv',sfr_band_ir='w3',hasmas
             conbeam = 15.*u.arcsec
     
     # Get SFR at this resolution.
-    sfr = sfr_get(gal,hdr,res=res,band_uv=sfr_band_uv,band_ir=sfr_band_ir,autocorrect=sfr_autocorrect) 
+    sfr = sfr_get(gal,hdr,conbeam=None,res=res,band_uv=sfr_band_uv,band_ir=sfr_band_ir,\
+                  autocorrect=sfr_autocorrect,return_mode='hdu') 
     #     Not convolved yet, despite that being an option.
     
     if res=='7p5' and sfr is None and sfr_autocorrect==True:  # If 7.5" isn't found and we want to try lower res:
         print('(galaxytools.info())     WARNING: 7.5" SFR map not found.\n\
                                   Will attempt a 15" SFR map instead!')
         res='15'
-        sfr = sfr_get(gal,hdr,res=res,band_uv=sfr_band_uv,band_ir=sfr_band_ir) # Try again with lower resolution.
+        sfr = sfr_get(gal,hdr,conbeam=None,res=res,band_uv=sfr_band_uv,band_ir=sfr_band_ir,\
+                  autocorrect=sfr_autocorrect,return_mode='hdu')  # Try again with lower resolution.
     if res=='15' and sfr is not None:  # If a 15" SFR map was successful:
         if conbeam==7.5*u.arcsec:
             print('(galaxytools.info())     NOTE:    The 15" SFR map was successful! Changing conbeam from 7.5" to 15".')
@@ -2165,14 +2261,16 @@ def info(gal,conbeam=None,data_mode='',sfr_band_uv='nuv',sfr_band_ir='w3',hasmas
     
     # CONVOLUTION, if enabled:
     if conbeam!=None:
-        hdr,I_mom0, I_tpeak, cube = cube_convolved(gal,conbeam,data_mode) # CONVOLVED moments, with their cube.
+        hdr, cube = cube_convolved(gal,conbeam,data_mode) # CONVOLVED cube, with replacement header.
+        I_mom0  = convolve_2D(gal,I_mom0,conbeam)   # Convolved mom0, from 2D map rather than cube
+        I_tpeak = convolve_2D(gal,I_tpeak,conbeam)  # Same but for tpeak
         if sfr is not None:
-            sfr = convolve_2D(gal,hdr,sfr,conbeam)  # Convolved SFR map.
+            sfr = convolve_2D(gal,sfr,conbeam)  # Convolved SFR map.
     
     if hasmask==True:
-        return hdr,beam,I_mom0,I_mom1,peakvels,I_tpeak,cube,mask,sfr
+        return hdr,beam,I_mom0.data,I_mom1,peakvels,I_tpeak.data,cube,mask,sfr.data
     else:
-        return hdr,beam,I_mom0,I_mom1,I_tpeak,cube,sfr
+        return hdr,beam,I_mom0.data,I_mom1,I_tpeak.data,cube,sfr.data
     
 def depletion(Sigma=None,sfr=None):
     '''
@@ -2293,7 +2391,7 @@ def sigmas(gal,hdr=None,I_mom0=None,I_tpeak=None,alpha=6.7,data_mode='',mapmode=
         Name of galaxy, OR Galaxy
         object.
     hdr=None : astropy.io.fits.header.Header
-        Header for the galaxy.
+        Only used for pixel sizes.
         Will be found automatically if not
         specified.
     I_mom0=None : np.ndarray
@@ -2456,26 +2554,27 @@ def cube_convolved(gal,conbeam,data_mode='',\
             cubec.allow_huge_operations=True
         else:
             raise ValueError(filename+' does not exist.')
-        I_mom0c = cubec.moment0().to(u.K*u.km/u.s)
-        I_tpeakc = cubec.max(axis=0).to(u.K)
+        I_mom0c = cubec.moment0().to(u.K*u.km/u.s)  # Unused, except for header
+#         I_tpeakc = cubec.max(axis=0).to(u.K)
         hdrc = I_mom0c.header
     elif data_mode in ['12m','12m+7m']:
         path = path12m
         if conbeam not in resolutions:
-            filename = path+'cube_convolved/'+name.lower()+'_co21_12m+7m+tp_flat_round_k_'\
+            filename = path+'cube_convolved/'+name.lower()+'_co21_12m+7m+tp_pbcorr_round_k_'\
                                                            +conbeam_filename+'.fits'
             if os.path.isfile(filename):
                 cubec = SpectralCube.read(filename)
                 cubec.allow_huge_operations=True
             else:
                 raise ValueError(filename+' does not exist.')
-            I_mom0c = cubec.moment0().to(u.K*u.km/u.s)
-            I_tpeakc = cubec.max(axis=0).to(u.K)
+            I_mom0c = cubec.moment0().to(u.K*u.km/u.s)  # Unused, except for header
+#             I_tpeakc = cubec.max(axis=0).to(u.K)
             hdrc = I_mom0c.header
         else:    # If pre-convolved 3D data (mom0, tpeak, cube) exist:
+            raise ValueError('tools.cube_convolved() : OUTDATED CODE - Change address from galaxies/phangsdata to proper PHANGS-v1p0 folder!')
             I_mom0c  = fits.getdata('phangsdata/'+name.lower()+'_co21_12m+7m+tp_mom0_'+conbeam_filename+'.fits')*u.K*u.km/u.s
             I_tpeakc = fits.getdata('phangsdata/'+name.lower()+'_co21_12m+7m+tp_tpeak_'+conbeam_filename+'.fits')*u.K
-            filename = 'phangsdata/'+name.lower()+'_co21_12m+7m+tp_flat_round_k_'+conbeam_filename+'.fits'
+            filename = 'phangsdata/'+name.lower()+'_co21_12m+7m+tp_pbcorr_round_k_'+conbeam_filename+'.fits'
             if os.path.isfile(filename):
                 cubec = SpectralCube.read(filename)
                 cubec.allow_huge_operations=True
@@ -2487,9 +2586,10 @@ def cube_convolved(gal,conbeam,data_mode='',\
     else:
         print('ERROR: No data_mode selected in galaxytools.convolve_cube()!')
         
-    return hdrc,I_mom0c.value, I_tpeakc.value, cubec
+#     return hdrc,I_mom0c.value, I_tpeakc.value, cubec
+    return hdrc, cubec
 
-def convolve_2D(gal,hdr,map2d,conbeam):
+def convolve_2D(gal,map2d,conbeam):
     '''
     Returns 2D map (e.g. SFR), convolved 
     to a beam width "conbeam".
@@ -2499,53 +2599,53 @@ def convolve_2D(gal,hdr,map2d,conbeam):
     gal : str OR Galaxy
         Name of galaxy, OR Galaxy
         object.
-    hdr : fits.header.Header
-        Header for the galaxy. Does
-        NOT need to be convolved!
-        Only needed for pixel sizes.
-    map2d : np.ndarray
+        Only needed for converting
+        "distance" conbeam to "angle"
+        conbeam.
+    map2d : HDU or HDUlist
         The map (e.g. SFR) that needs to 
         be convolved.
     conbeam : float
         Convolution beam width, in pc 
-        OR arcsec. Must specify units!
-        The actual width of the Gaussian
-        is conbeam/np.sqrt(8.*np.log(2)).
+        OR arcsec. Must have units!
 
     Returns:
     --------
-    map2d_convolved : np.ndarray
+    map2d_convolved : HDU
         The same map, convolved.
     '''
     if isinstance(gal,Galaxy):
         name = gal.name.lower()
     elif isinstance(gal,str):
         name = gal.lower()
-        gal = galaxy(name.upper())
+        gal = Galaxy(name.upper())
     else:
         raise ValueError("'gal' must be a str or galaxy!")
     
     if conbeam.unit in {u.pc, u.kpc, u.Mpc}:
         conbeam_width = conbeam.to(u.pc)                         # Beam width, in pc.
-        conbeam_angle = conbeam / gal.distance.to(u.pc) * u.rad  # Beam width, in radians.
-        conbeam_angle = conbeam_angle.to(u.deg) / np.sqrt(8.*np.log(2)) # ..., in degrees, now as an
-                                                                        #   actual Gaussian stdev.
+        conbeam_angle = conbeam_width / gal.distance.to(u.pc) * u.rad  # Beam width, in radians.
+        conbeam_angle = conbeam_angle.to(u.arcsec)               # Beam width, in arcsec.
     elif conbeam.unit in {u.arcsec, u.arcmin, u.deg, u.rad}:
-        conbeam_angle = conbeam.to(u.deg) / np.sqrt(8.*np.log(2))# Beam width, in degrees, now as an
-                                                                 #          actual Gaussian stdev.
+        conbeam_angle = conbeam.to(u.arcsec)
     else:
         raise ValueError("'conbeam' must have units of pc or arcsec.")
     
+    if isinstance(map2d, HDUList):
+        # Not actually necessary; Projection handles HDU or HDUlist just fine either way
+        map2dl = map2d
+        map2d = map2dl[0]
+        print('tools.convolve_2D() - Warning: 2D map for '+gal.name+' was inputted as an HDUlist, but will be returned as an HDU.')
+    # Create Projection of 2D map, which can then be convolved
+    map2d_proj = Projection.from_hdu(map2d)
     
-    # Convert beam width into pixels, then feed this into a Gaussian-generating function.
+    # Create a beam object, and then convolve the 2D map to it!
+    bm = Beam(major=conbeam_angle,minor=conbeam_angle)    # Actual "beam" object
     
-    pixsizes_deg = wcs.utils.proj_plane_pixel_scales(wcs.WCS(hdr))[0]*u.deg # The size of each pixel, in deg.
-    conbeam_pixwidth = conbeam_angle / pixsizes_deg  # Beam width, in pixels.
-#     print( "Pixel width of beam: "+str(conbeam_pixwidth)+" pixels.")
+    # Convolve the cube!
+    map2d_convolved = map2d_proj.convolve_to(bm)
     
-    gauss = Gaussian2DKernel(conbeam_pixwidth)
-    map2d_convolved = convolve_fft(map2d,gauss,normalize_kernel=True)
-    return map2d_convolved
+    return map2d_convolved.hdu
 
 def convolve_cube(gal,cube,conbeam,data_mode='',\
                   path7m ='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-LP/working_data/osu/',\

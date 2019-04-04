@@ -438,7 +438,7 @@ def gen_input(name,data_mode='7m',mapmode='mom1',errors=False,errors_exist=False
     if bar_fit_try==True:
         bar_PA_diskplane = "{0:4.2f}".format(bar_PA_diskplane)
     else:
-        bar_PA_diskplane = "{0:4.2f}".format(45.*u.deg)
+        bar_PA_diskplane = "{0:4.2f}".format(45.)
     
     
     # Overrides from input!
