@@ -9,7 +9,7 @@ from astropy.wcs import WCS
 from astropy.table import Table
 from astropy.convolution import convolve_fft, Gaussian2DKernel
 from astropy.coordinates import SkyCoord, Angle, FK5
-from spectral_cube import SpectralCube, Projection
+from spectral_cube import SpectralCube, Projection, BooleanArrayMask
 from radio_beam import Beam
 
 from scipy import interpolate
@@ -744,25 +744,49 @@ def cube_get(gal,data_mode,return_best=False,\
     else:
         return cube
 
-def mask_get(gal,data_mode,\
-             path7m ='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-LP/working_data/osu/eros_masks/',\
-             path12m='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-v1p0/'):
-    raise ValueError('tools.mask_get() : Has not been touched! Needs PHANGS-ALMA-LP/delivery/cubes support!')
+def mask_get(gal,data_mode,return_boolean=True,\
+             path7m ='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-LP/working_data/osu/',\
+             path12m='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-LP/delivery/cubes/',\
+             mask_foldername='eros_masks/'):
+    '''
+    Parameters:
+    gal : Galaxy
+    data_mode : str
+        '7m' or '12m'.
+        Will try to fetch 7m+tp or 12m+tp 
+        where available.
+    return_boolean(=True) : bool
+        Toggles whether to return the mask
+        as a BooleanArrayMask (True) or
+        as a spectral cube (False).
+        
+    Note that, if 'mask' is a BooleanArrayMask,
+    you can mask cubes easily with
+    'cube.with_mask(mask)'.
+    '''
     if isinstance(gal,Galaxy):
         name = gal.name.lower()
     elif isinstance(gal,str):
         name = gal.lower()
     else:
         raise ValueError("'gal' must be a str or galaxy!")
-    if data_mode == '7m':
+    # (!!!) COPY HERE
+    if data_mode == '7m+tp':
+        print('tools.cube_get(): WARNING: Changing data_mode from 7m+tp to 7m. Will try to select 7m+tp regardless.')
         data_mode = '7m'
     elif data_mode in ['12m','12m+7m']:
         data_mode = '12m+7m'
+        raise ValueError('tools.mask_get() : Does not support 12m! Needs PHANGS-ALMA-LP/delivery/cubes support!')
+    elif data_mode in ['12m+tp','12m+7m+tp']:
+        print('tools.cube_get(): WARNING: Changing data_mode from '+data_mode+' to 12m. Will try to select 12m+tp regardless.')
+        data_mode = '12m+7m'
+        raise ValueError('tools.mask_get() : Does not support 12m! Needs PHANGS-ALMA-LP/delivery/cubes support!')
+    # (!!!) END COPY HERE
 
     # Spectral Cube Mask
     mask=None
     if data_mode=='7m':
-        path = path7m
+        path = path7m+mask_foldername
         filename_7mtp = name+'_'+data_mode+'+tp_co21_pbcorr_round_k_mask.fits'    # 7m+tp mask. Ideal.
         filename_7m   = name+'_'+data_mode+   '_co21_pbcorr_round_k_mask.fits'    # 7m mask. Less reliable.
         if os.path.isfile(path+filename_7mtp):
@@ -773,7 +797,7 @@ def mask_get(gal,data_mode,\
         else:
             print('WARNING: \''+filename_7mtp+'\', \''+filename_7m+'\' not found!')
     elif data_mode=='12m+7m':
-        path = path12m
+        path = path12m+mask_foldername
         filename = name+'_co21_'+data_mode+'+tp_mask.fits'
         if os.path.isfile(path+filename):
             mask = SpectralCube.read(path+filename)
@@ -784,6 +808,15 @@ def mask_get(gal,data_mode,\
         
     if mask is None:
         print('WARNING: No mask was found!')
+        raise ValueError('tools.mask_get() - Maybe create a BooleanArrayMask here, except everything is True?\nAs opposed to just returning None.')
+        return mask
+    else:
+        if return_boolean==True:
+            # Make sure mask and corresponding cube have same WCS.
+            # Kind of redundant, but worth doing just in case?
+            cube = cube_get(gal,data_mode,False,path7m,path12m)
+            mask = BooleanArrayMask(mask=(mask.unmasked_data[:]==True), wcs=cube.wcs)
+#             mask = BooleanArrayMask(mask=(mask.unmasked_data[:]==True), wcs=mask.wcs)   # Alternate version, if the cube and mask always have identical WCSs            
     return mask
 
 def sfr_get(gal,hdr=None,conbeam=None,res='7p5',band_uv='nuv',band_ir='w3',autocorrect=False,\
@@ -2262,15 +2295,44 @@ def info(gal,conbeam=None,data_mode='',sfr_band_uv='nuv',sfr_band_ir='w3',hasmas
     # CONVOLUTION, if enabled:
     if conbeam!=None:
         hdr, cube = cube_convolved(gal,conbeam,data_mode) # CONVOLVED cube, with replacement header.
-        I_mom0  = convolve_2D(gal,I_mom0,conbeam)   # Convolved mom0, from 2D map rather than cube
-        I_tpeak = convolve_2D(gal,I_tpeak,conbeam)  # Same but for tpeak
+        I_mom0  = convolve_2D(gal,I_mom0,conbeam)   # Convolved mom0, from 2D map rather than cube. Maybe unused.
+        I_tpeak = convolve_2D(gal,I_tpeak,conbeam)  # Same but for tpeak. Maybe unused.
         if sfr is not None:
-            sfr = convolve_2D(gal,sfr,conbeam)  # Convolved SFR map.
-    
+            if ((sfr.header['BMAJ']*u.deg).to(u.arcsec)).value > conbeam.value:
+                if np.isclose(((sfr.header['BMAJ']*u.deg).to(u.arcsec)).value,conbeam.value):
+                    print('tools.info() - SFR beam ('+str((sfr.header['BMAJ']*u.deg).to(u.arcsec))+') is very close to desired conbeam ('+str(conbeam)+'), but slightly larger\n\
+               (i.e. already lower-res). WILL NOT CONVOLVE, to prevent crashing.')
+                else:
+                    raise ValueError('tools.info() - SFR beam ('+str((sfr.header['BMAJ']*u.deg).to(u.arcsec))+') is way larger than desired conbeam ('+str(conbeam)+'), i.e. already\n\
+               lower-res. THIS SHOULD NEVER HAPPEN.')
+            else:
+                sfr = convolve_2D(gal,sfr,conbeam)  # Convolved SFR map.
+            sfr = sfr.data    
+    # Ver 1: From convolved cube (proper). REQUIRES MASK
     if hasmask==True:
-        return hdr,beam,I_mom0.data,I_mom1,peakvels,I_tpeak.data,cube,mask,sfr.data
+#     Convolve the cube, mask it, and then generate mom0/tpeak/etc with it.
+#     Replicating the mom0, tpeak in the folder EXACTLY requires some "blurring" of the mask
+#     which is kinda difficult to explain, so I'll skip that step.
+        cube2 = cube.with_mask(mask)
+        I_mom0 = cube2.moment0().to(u.K*u.km/u.s).value
+        I_tpeak = cube2.max(axis=0).to(u.K).value
+        return hdr,beam,I_mom0,I_mom1,peakvels,I_tpeak,cube,mask,sfr
     else:
-        return hdr,beam,I_mom0.data,I_mom1,I_tpeak.data,cube,sfr.data
+        raise ValueError('tools.info() - hasmask=False. However, mom0 and tpeak cannot be\
+        properly convolved without it. (Is crashing necessary? We did this before.)')
+        I_mom0 = cube.moment0().to(u.K*u.km/u.s).value
+        I_tpeak = cube.max(axis=0).to(u.K).value
+        return hdr,beam,I_mom0,I_mom1,I_tpeak,cube,sfr
+        
+#     # Ver 2: From convolved 2D map
+#     # Mask the mom0, tpeak data to match the cube's mask
+#     cubeslice = cube[0].value   # 2D slice of cube data. Should theoretically have same mask as all slices
+#     I_mom0.data[~np.isfinite(cubeslice)] = np.nan
+#     I_tpeak.data[~np.isfinite(cubeslice)] = np.nan
+#     if hasmask==True:
+#         return hdr,beam,I_mom0.data,I_mom1,peakvels,I_tpeak.data,cube,mask,sfr
+#     else:
+#         return hdr,beam,I_mom0.data,I_mom1,I_tpeak.data,cube,sfr
     
 def depletion(Sigma=None,sfr=None):
     '''
