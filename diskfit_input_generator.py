@@ -169,10 +169,8 @@ def filename_get(name,data_mode='7m',mapmode='mom1',force_same_res=False,\
     return filename_map, filename_emap
 
 def gen_input(name,data_mode='7m',mapmode='mom1',errors=False,errors_exist=False,iteration=1,  \
-#              xcen  =np.nan,ycen  =np.nan,PA  =np.nan,eps  =np.nan,vsys  =np.nan,\
-#              xcen_p=np.nan,ycen_p=np.nan,PA_p=np.nan,eps_p=np.nan,vsys_p=np.nan,\
-              xcen  =np.nan,ycen  =np.nan,PA  =np.nan,eps  =np.nan,vsys  =np.nan,bar_PA  =np.nan,\
-              xcen_p=np.nan,ycen_p=np.nan,PA_p=np.nan,eps_p=np.nan,vsys_p=np.nan,bar_PA_p=np.nan,\
+              xcen  =np.nan,ycen  =np.nan,PA  =np.nan,incl  =np.nan,vsys  =np.nan,bar_PA  =np.nan,\
+              xcen_p=np.nan,ycen_p=np.nan,PA_p=np.nan,incl_p=np.nan,vsys_p=np.nan,bar_PA_p=np.nan,\
               alteration=[None]*8,\
               bar_fit_try=False,\
               toggle_beam_smear=False,\
@@ -271,12 +269,17 @@ def gen_input(name,data_mode='7m',mapmode='mom1',errors=False,errors_exist=False
     else:
         data_mode_temp = data_mode
 #    hdr, beam, x, I_mom1, x, x, x, x, x = tools.info(gal,None,data_mode_temp)
-    hdr, beam, x, I_mom1, x, x, x, = tools.info(gal,None,data_mode_temp,hasmask=False)
+#    hdr, beam, x, I_mom1, x, x, x, = tools.info(gal,None,data_mode_temp,hasmask=False)
+    with silence():
+        hdr, beam, x, x, I_mom1, x, x, x, x, x = tools.info(gal,None,data_mode_temp,hasmask=True)
     I_mom1 = tools.mom1_get(gal,data_mode)
     
     # Initialize!
     alteration_label = ['PA_altered','eps_altered','coords_altered','vsys_altered','bar_PA_altered',\
                         'r_w_altered','warp_eps_altered','warp_PA_altered']
+    # Mark coords as "found" if they're forcibly fixed and a previous run occurred
+    if toggle_xcen_over=='F' and xcen_p is not np.nan:
+        alteration[alteration_label.index('coords_altered')]=True
     
     # Generate xcen, ycen, as numbers.
     pixsizes_deg = wcs.utils.proj_plane_pixel_scales(wcs.WCS(hdr))[0]*u.deg # Pixel width, in deg.
@@ -301,8 +304,9 @@ def gen_input(name,data_mode='7m',mapmode='mom1',errors=False,errors_exist=False
     beam_smear = "{0:4.2f}".format(beam*u.deg/pixsizes_deg)            # Beam smearing size. Rule of thumb: should be <0.5x the ring spacing.
     
     # Get PA, Eps, Vsys
-    PA_1 = "{0:4.2f}".format(gal.position_angle.value)
-    eps_1 = "{0:4.2f}".format(1.0 - np.cos(gal.inclination))
+    PA_1 = "{0:6.2f}".format(gal.position_angle.value)
+#    eps_1 = "{0:4.5f}".format(1.0 - np.cos(gal.inclination))
+    incl_1 = "{0:4.2f}".format((gal.inclination.to(u.deg)).value)
     vsys_1 = "{0:4.2f}".format(gal.vsys.value)
     
     # Bars!
@@ -334,9 +338,9 @@ def gen_input(name,data_mode='7m',mapmode='mom1',errors=False,errors_exist=False
         xcen_1 = "{0:4.2f}".format(xcen_p)
         ycen_1 = "{0:4.2f}".format(ycen_p)
     if ~np.isnan(PA_p):
-        PA_1 = "{0:4.2f}".format(PA_p.value)
-    if ~np.isnan(eps_p):
-        eps_1 = "{0:4.2f}".format(eps_p)
+        PA_1 = "{0:6.2f}".format(PA_p.value)
+    if ~np.isnan(incl_p):
+        incl_1 = "{0:4.2f}".format(incl_p.value)
     if ~np.isnan(vsys_p):
         vsys_1 = "{0:4.2f}".format(vsys_p.value)
     if ~np.isnan(bar_PA_p):
@@ -364,8 +368,12 @@ def gen_input(name,data_mode='7m',mapmode='mom1',errors=False,errors_exist=False
             toggle_eps  = 'T'
             toggle_vsys = 'T'
         else:
-            if float(xcen_1)*float(ycen_1) != float(xcen)*float(ycen):
-            # Prevent redundant printing if the current and previous values are the same.
+            if float(xcen_1)*float(ycen_1) != float(xcen)*float(ycen)\
+            or (alteration[alteration_label.index('PA_altered')]==False\
+            and alteration[alteration_label.index('eps_altered')]==False\
+            and alteration[alteration_label.index('vsys_altered')]==False):
+            # Prevent redundant printing if the coords are locked in (i.e. the input&output of the previous run are exactly the same).
+            # BUT, print this if the PA+eps+vsys haven't been fitted yet.
                 print(name+'\'s xcen and ycen : ('+xcen_1+','+ycen_1+') to ('+xcen+','+ycen+').')
                 print(name+' : Disabled central toggle!')
                 print(name+' : Enabled PA toggle!')
@@ -378,7 +386,7 @@ def gen_input(name,data_mode='7m',mapmode='mom1',errors=False,errors_exist=False
             xcen_1 = xcen
             ycen_1 = ycen
     if ~np.isnan(PA):
-        PA = "{0:4.2f}".format(PA.value)
+        PA = "{0:6.2f}".format(PA.value)
         # Check for bogus results.
         if alteration[alteration_label.index('PA_altered')]==False:
             toggle_PA = 'T'
@@ -389,17 +397,17 @@ def gen_input(name,data_mode='7m',mapmode='mom1',errors=False,errors_exist=False
                 print(name+' : Disabled PA toggle!')
             toggle_PA = 'F'
             PA_1 = PA
-    if ~np.isnan(eps):
-        eps = "{0:4.2f}".format(eps)
+    if ~np.isnan(incl):
+        incl = "{0:4.2f}".format(incl.value)
         if alteration[alteration_label.index('eps_altered')]==False:
             toggle_eps = 'T'
         else:
-            if float(eps_1)!=float(eps):
+            if float(incl_1)!=float(incl):
             # If the current and previous values are the same, prevent redundant printing.
-                print(name+'\'s eps : '+eps_1+' -> '+eps+'.')
+                print(name+'\'s incl : '+incl_1+' -> '+incl+'.')
                 print(name+' : Disabled eps toggle!')
             toggle_eps = 'F'
-            eps_1 = eps
+            incl_1 = incl
     if ~np.isnan(vsys):
         vsys = "{0:4.2f}".format(vsys.value)
         if alteration[alteration_label.index('vsys_altered')]==False:
@@ -462,9 +470,10 @@ def gen_input(name,data_mode='7m',mapmode='mom1',errors=False,errors_exist=False
 
     # METHOD 2
     # Use previous DiskFit parameters to determine what radii look like!
-    incl_1 = (np.arccos(1.-float(eps_1))*u.rad).to(u.deg)
+#    incl_1 = (np.arccos(1.-float(eps_1))*u.rad).to(u.deg)
+    incl_1_value = float(incl_1)*u.deg
     gal.position_angle = float(PA_1)*u.deg
-    gal.inclination = incl_1
+    gal.inclination = incl_1_value
     gal.vsys = float(vsys_1)*u.km/u.s
     # Calculate radius map of galaxy, in galactic plane.
     pixsizes_deg = wcs.utils.proj_plane_pixel_scales(wcs.WCS(hdr))[0]*u.deg # Pixel width, in deg.
@@ -556,6 +565,7 @@ def gen_input(name,data_mode='7m',mapmode='mom1',errors=False,errors_exist=False
 
     # Generate the actual input file ('input_str')!
     text = []
+    eps_1 = "{0:4.5f}".format(1.-np.cos(float(incl_1)*u.deg))
     text.append("PHANGS AUTO-GENERATED ROTATION CURVE")
     text.append("vels                                ")
     text.append("T  F                                ")
@@ -568,7 +578,7 @@ def gen_input(name,data_mode='7m',mapmode='mom1',errors=False,errors_exist=False
     text.append(""+regrad+" "+PA_1+" "+eps_1+"  2 "+pixscale+"  ")
     text.append("'Output/"+name.lower()+"_v"+str(iteration)+".out")
     text.append(""+toggle_PA+" "+toggle_eps+" "+toggle_xcen+"                   #(!!!) FFT, then TTF!")
-    text.append(""+PA_1+"  "+eps_1+"            # PA, eps")
+    text.append(""+PA_1+"  "+eps_1+"         # PA, eps; incl_in =    "+incl_1)
     text.append(""+xcen_1+"  "+ycen_1+"            # xcen, ycen             ")
     text.append(""+has_bar+" "+toggle_bar_PA+" "+str(bar_PA_diskplane)+" "+m+"             #(?) Noncirc/non-axisymm/BAR flow toggle. Avoid radial.")
 #     text.append("F T "+str(45.0)+" "+m+"             #(?) Noncirc/non-axisymm/BAR flow toggle. Avoid radial.")
@@ -583,8 +593,8 @@ def gen_input(name,data_mode='7m',mapmode='mom1',errors=False,errors_exist=False
 #    print('(!!!!) NOTE: bar_R multiplied by 4/5 as a test.')
     for j in range(radius_pix.size):
         text.append("{0:4.2f}".format(radius_pix[j]))
-    print('!!! TEMP !!! : Ring distance = '+str((radius_max_pix-radius_min_pix)/n_radii))
-    print('!!! TEMP !!! : Beam size = '+('0.')*(toggle_beam_smear==False)+(beam_smear*toggle_beam_smear))
+#    print('!!! TEMP !!! : Ring distance = '+str((radius_max_pix-radius_min_pix)/n_radii))
+#    print('!!! TEMP !!! : Beam size = '+('0.')*(toggle_beam_smear==False)+(beam_smear*toggle_beam_smear))
     input_str = ''
     for i in range(0,len(text)):
         input_str = input_str+text[i]+'\n'
@@ -644,7 +654,7 @@ def read_output(name,iteration=1,alteration=[False]*8,verbose=True,\
     else:
         print('WARNING: '+name+'\'s output file missing!')
         return np.nan,np.nan,np.nan,np.nan,np.nan,np.nan,np.nan,np.nan,np.nan,np.nan,\
-               np.nan,np.nan,np.nan,np.nan,np.nan,np.nan,np.nan,np.nan,np.nan,\
+               np.nan,np.nan,np.nan,np.nan,np.nan,np.nan,np.nan,np.nan,np.nan,np.nan,\
                alteration,np.nan
 
     # Initializing. Do not touch.
@@ -657,9 +667,9 @@ def read_output(name,iteration=1,alteration=[False]*8,verbose=True,\
 
     # Pick out all the input/output parameters!
     # Also, pick out the rotcurves with error bars.
-    PA_in,PA_out,eps_in,eps_out,incl_out,xcen_in,xcen_out,ycen_in,ycen_out,\
+    PA_in,PA_out,eps_in,eps_out,incl_in,incl_out,xcen_in,xcen_out,ycen_in,ycen_out,\
         bar_PA_in,bar_PA_out,vsys_in,vsys_out,delta_ISM_in,r_w_in,r_w_out,\
-        warp_eps_in,warp_eps_out,warp_PA_in,warp_PA_out,chi2_out = [np.nan]*21
+        warp_eps_in,warp_eps_out,warp_PA_in,warp_PA_out,chi2_out = [np.nan]*22
 
     alteration_label = ['PA_altered','eps_altered','coords_altered','vsys_altered','bar_PA_altered',\
                         'r_w_altered','warp_eps_altered','warp_PA_altered']
@@ -675,6 +685,7 @@ def read_output(name,iteration=1,alteration=[False]*8,verbose=True,\
                 PA_in = float(lines[i][36:43])*u.deg
             if lines[i][0:9]=='disk eps:':
                 eps_in = float(lines[i][36:43])
+                incl_in = read_input(name,iteration,diskfit_folder)
             if lines[i][0:24]=='x,y center (data units):':
                 xcen_in = float(lines[i][36:43])
                 ycen_in = float(lines[i][44:51])
@@ -780,7 +791,7 @@ def read_output(name,iteration=1,alteration=[False]*8,verbose=True,\
                 print('    Good eps = '+"{0:4.2f}".format(eps_out)+'.')
             alteration[alteration_label.index('eps_altered')] = True
     else:
-        incl_out = np.nan
+        incl_out = incl_in
         eps_out = eps_in
         if alteration[alteration_label.index('eps_altered')]==True:
             if verbose==True:
@@ -943,9 +954,55 @@ def read_output(name,iteration=1,alteration=[False]*8,verbose=True,\
         if verbose==True:
             print(' (!) WARNING : chi^2 = '+"{0:4.2f}".format(chi2_out)+'.')
             
-    return xcen_out,ycen_out, PA_out, eps_out, incl_out, vsys_out, bar_PA_out, r_w_out, warp_PA_out, warp_eps_out,\
+    return xcen_out,ycen_out, PA_out, eps_out, incl_in, incl_out, vsys_out, bar_PA_out, r_w_out, warp_PA_out, warp_eps_out,\
            xcen_in, ycen_in,  PA_in,  eps_in,  vsys_in,  bar_PA_in,  r_w_in,  warp_PA_in,  warp_eps_in,\
            alteration, chi2_out
+    # ^ Edit later on if need be.
+
+def read_input(name,iteration=1,diskfit_folder='diskfit_procedural/'):
+    '''
+    Reads the input file for 'iteration',
+    and returns the output values as astropy
+    Quantities. Currently only supports
+    incl.
+    
+    -----------
+    Parameters:
+    -----------
+    
+    name : str
+        Galaxy's name.
+    iteration=1 : int
+        Iteration number.
+    '''
+    # Read the DiskFit input files!
+    input_filename = '/media/jnofech/BigData/galaxies/'+diskfit_folder+name.lower()\
+                          +'_v'+str(iteration)+'.inp'
+        
+    if os.path.isfile(input_filename):
+        file = open(input_filename,'r')
+    else:
+        print('WARNING: '+input_filename+' is missing!')
+        return np.nan
+
+    # Initializing. Do not touch.
+    i=0                         # Line number, for the 'lines' list. Line no. for the text file is i+1.
+    lines = []
+    # Save the file to a list of strings, so we can read more easily!
+    for line in file:
+        lines = np.append(lines,line)
+
+    # Pick out all the input/output parameters!
+    # Also, pick out the rotcurves with error bars.
+    incl_in = [np.nan]*1
+    
+    for i in range(0,len(lines)):
+        if lines[i][24:40]=='# PA, eps; incl_':
+            incl_in = float(lines[i][48:55])*u.deg
+    if incl_in is [np.nan]:
+        print('WARNING: dig.read_input() - input inclination not found!')
+            
+    return incl_in
     # ^ Edit later on if need be.
     
 def checkcustom(name,iteration=1,diskfit_folder='diskfit_procedural/'):
@@ -1097,42 +1154,73 @@ def read_all_outputs(gal,mode='params',diskfit_folder='diskfit_procedural/',use_
     iteration=20
     while True:
         with silence():
-            xcen_out,ycen_out, PA_out, eps_out, incl_out, vsys_out, bar_PA_out, r_w_out, warp_PA_out, warp_eps_out,\
+            xcen_out,ycen_out, PA_out, eps_out, incl_in, incl_out, vsys_out, bar_PA_out, r_w_out, warp_PA_out, warp_eps_out,\
             xcen_in, ycen_in,  PA_in,  eps_in,  vsys_in,  bar_PA_in,  r_w_in,  warp_PA_in,  warp_eps_in,\
             alteration, chi2_out = read_output(name,iteration=iteration,alteration=alteration,\
                                                custom_input=custom_input,diskfit_folder=diskfit_folder)
-            if [xcen_out,ycen_out, PA_out, eps_out, incl_out, vsys_out, bar_PA_out, r_w_out, warp_PA_out, warp_eps_out,\
+            if [xcen_out,ycen_out, PA_out, eps_out, incl_in, incl_out, vsys_out, bar_PA_out, r_w_out, warp_PA_out, warp_eps_out,\
                 xcen_in, ycen_in,  PA_in,  eps_in,  vsys_in,  bar_PA_in,  r_w_in,  warp_PA_in,  warp_eps_in,\
                 alteration, chi2_out] == [np.nan,np.nan,np.nan,np.nan,np.nan,np.nan,np.nan,np.nan,np.nan,np.nan,\
-                np.nan,np.nan,np.nan,np.nan,np.nan,np.nan,np.nan,np.nan,np.nan,\
+                np.nan,np.nan,np.nan,np.nan,np.nan,np.nan,np.nan,np.nan,np.nan,np.nan,\
                 alteration,np.nan] and iteration!=0:
+                # If output fails 
                 iteration = iteration-1
             elif iteration<=0:
                 print('dig.read_all_outputs() : NOT A SINGLE OUTPUT FILE DETECTED! Very sad.')
                 iteration_incl = iteration
                 break
             else:
+                print('dig.read_all_outputs() : Fitted params found, but still need the Incl value without rounding errors!')
+                # This code will keep reading through lower and lower 'iterations' until "incl_out" is different from its current "incl_in", OR until "incl_in" does not match the previous "incl_out".
+                #   Whichever comes first.
+                # This will be the highest iteration at which inclination is fitted OR externally updated (e.g. a case where i<18.2deg).
                 iteration_incl = iteration
-                if np.isnan(incl_out):
-                    print('dig.read_all_outputs() : Fitted params found, but still need the Incl value without rounding errors!')
-                    # This code will keep reading through lower and lower 'iterations' until an "incl_out" is found. This is the highest iteration at which eps is fitted.
-                    while True:
-                        x,x, x, x, incl_out, x, x, x, x, x,\
-                        x, x,  x,  x,  x,  x,  x,  x,  x,\
-                        x, x = read_output(name,iteration=iteration_incl,alteration=alteration,\
-                                           custom_input=custom_input,diskfit_folder=diskfit_folder)
-                        if np.isnan(incl_out) and iteration_incl!=0:
-                            iteration_incl = iteration_incl-1
-                        elif iteration_incl<=0:
-                            print('dig.read_all_outputs() : Outputs found, but no inclination value was found for some reason. Ideally, this should never happen!')
+                incl_in_next = np.nan
+                while True:
+                    x,x, x, x, incl_in, incl_out, x, x, x, x, x,\
+                    x, x,  x,  x,  x,  x,  x,  x,  x,\
+                    x, x = read_output(name,iteration=iteration_incl,alteration=alteration,\
+                                       custom_input=custom_input,diskfit_folder=diskfit_folder)
+                    
+                    if incl_in_next is not np.nan:
+                        if (incl_in==incl_in_next and incl_in!=incl_out)\
+                        or (incl_in!=incl_in_next and incl_in==incl_out)\
+                        or (incl_in!=incl_in_next and incl_in!=incl_out and incl_out!=incl_in_next):
+                            print('Inclination was forcibly altered from outside this code at the start of iteration '+str(iteration_incl+1)+'!')
+                            print(incl_in,incl_in_next,incl_out)
+                            iteration_incl = iteration_incl + 1
+                            with silence():
+                                x,x, x, x, incl_in, incl_out, x, x, x, x, x,\
+                                x, x,  x,  x,  x,  x,  x,  x,  x,\
+                                x, x = read_output(name,iteration=iteration_incl,alteration=alteration,\
+                                                   custom_input=custom_input,diskfit_folder=diskfit_folder)
                             break
-                        else:
+                        if (incl_in!=incl_in_next and incl_in!=incl_out and incl_out==incl_in_next):
+                            print('Inclination output was found at the end of iteration '+str(iteration_incl)+'!')
                             break
+                    else:  # If there's no "next" file:
+                        if (incl_in!=incl_in_next and incl_in!=incl_out):
+                            print('Inclination output was found at the end of iteration '+str(iteration_incl)+'!')
+                            break
+                            
+                    incl_in_next = incl_in    # incl at iteration_incl+1, if available
+                                
+                    if iteration_incl<=0:
+                        raise ValueError('dig.read_all_outputs() : Outputs found, but no inclination value was found for some reason. Ideally, this should never happen!')
+                        break
+                    else:
+                        print('No change in incl detected for iteration_incl='+str(iteration_incl)+'.')
+                        iteration_incl = iteration_incl-1
                 break
+                
+    if iteration<iteration_incl:
+        # This shouldn't ever happen.
+        iteration = iteration_incl
+        raise ValueError('iteration, iteration_incl = '+str(iteration)+','+str(iteration_incl)+'.')
     if iteration!=0:
-        print('Output for iteration='+str(iteration)+' successful! (eps fitted in iteration_incl='+str(iteration_incl)+')')
+        print('Output successful for iteration='+str(iteration)+'! (eps fitted in iteration_incl='+str(iteration_incl)+')')
     else:
-        print('plotting : OUTPUT FILE NOT DETECTED! Reverting to previous output file.')
+        print('dig.read_all_outputs() : NO OUTPUT FILES DETECTED!')
     
     if np.isnan(PA_out):
         print('WARNING: PA never changed!')

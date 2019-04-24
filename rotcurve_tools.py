@@ -462,7 +462,7 @@ def epicycles(R,vrot):
     
     return k
     
-def rotmap(gal,header,position_angle=None,inclination=None,data_mode='',mapmode='mom1'):
+def rotmap(gal,header,position_angle=None,inclination=None,data_mode='',mapmode='mom1',rcmode='best'):
     '''
     Returns "observed velocity" map, and "radius
     map". (The latter is just to make sure that the
@@ -494,6 +494,11 @@ def rotmap(gal,header,position_angle=None,inclination=None,data_mode='',mapmode=
                  data_mode.
         'peakvels' - uses peakvels map of 
                      specified data_mode.
+    rcmode(='best') : str
+        - "smooth(ed)"  : uses smoothed rotcurve.
+        - "(LSQ)urc" : uses final, lsq-improved rotcurve.
+        - "(MC)urc" : uses final, MC-improved rotcurve (different method).
+        - "best"    : uses MC, LSQ, or smoothed URC (in order of descending accuracy).
         
     Returns:
     --------
@@ -551,8 +556,8 @@ def rotmap(gal,header,position_angle=None,inclination=None,data_mode='',mapmode=
     d = (gal.distance).to(u.parsec)                  # Distance to galaxy, from Mpc to pc
 
     # vrot Interpolation
-    R_1d, vrot,R_e,vrot_e = rotcurve(name,data_mode=data_mode,mapmode=mapmode)  # Creates "vrot" interpolation function, and 1D array of R.
-
+#     R_1d, vrot,R_e,vrot_e = rotcurve(name,data_mode=data_mode,mapmode=mapmode)  # Creates "vrot" interpolation function, and 1D array of R.
+    R_1d, vrot = RC(gal,data_mode,mode=rcmode)
 
     # Generating displayable grids
     X,Y = gal.radius(header=header, returnXY=True)  # Coordinate grid in galaxy plane, as "seen" by telescope, in Mpc.
@@ -566,14 +571,14 @@ def rotmap(gal,header,position_angle=None,inclination=None,data_mode='',mapmode=
     rad = ( (rad.value<R_1d.max()) * (rad.value>R_1d.min())).astype(int) * rad  
     rad[ rad==0 ] = np.nan                         # Grid of radius, with values outside interpolation range removed.
 
-    skycoord = gal.skycoord_grid(header=header)     # Coordinates (RA,Dec) of the above grid at each point, in degrees.
-    RA = skycoord.ra                             # Grid of RA in degrees.
-    Dec = skycoord.dec                           # Grid of Dec in degrees.
-
+#     skycoord = gal.skycoord_grid(header=header)     # Coordinates (RA,Dec) of the above grid at each point, in degrees.
+#     RA = skycoord.ra                             # Grid of RA in degrees.
+#     Dec = skycoord.dec                           # Grid of Dec in degrees.
 
     vobs = (vsys.value + vrot(rad)*np.sin(I)*np.cos( np.arctan2(Y,X) )) * (u.km/u.s)
     
-    return vobs, rad, Dec, RA
+#     return vobs, rad, Dec, RA
+    return vobs, rad
 
 def bspline(X,Y,knots=8,k=3,lowclamp=False, highclamp=False):
     '''
@@ -761,10 +766,32 @@ def linewidth_iso(gal,beam=None,smooth='spline',knots=8,data_mode='',mapmode='mo
     d = (gal.distance).to(u.pc)
     Rc = beam*d / u.rad                         # Beam size, in parsecs
     
-    # Use "interp" to generate R, vrot (smoothed), k (epicyclic frequency).
-    R, vrot, R_e, vrot_e = gal.rotcurve(data_mode=data_mode,mapmode=mapmode)
-    R, vrot_s            = rotcurve_smooth(R,vrot,R_e,vrot_e,smooth=smooth,knots=knots)
-    k = epicycles(R,vrot_s)
+#     # Use "interp" to generate R, vrot (smoothed), k (epicyclic frequency).
+#     R, vrot, R_e, vrot_e = gal.rotcurve(data_mode=data_mode,mapmode=mapmode)
+#     R, vrot_s            = rotcurve_smooth(R,vrot,R_e,vrot_e,smooth=smooth,knots=knots)
+    
+    # Find smoothed rotcurves
+    R,vrot,R_e,vrot_e = RC(gal,data_mode,mode='diskfit')
+    R,vrot_s   = RC(gal,data_mode,mode='smoothed')
+    R,vrot_lsq = RC(gal,data_mode,mode='LSQ')
+    R,vrot_mc  = RC(gal,data_mode,mode='MCurc')
+    # Choose the best rotcurve (MC > LSQ > urc)
+    if (vrot_mc is None) and (vrot_lsq is None):
+        vrot_mc  = nan1D
+        vrot_lsq = nan1D
+        vrot_best_index = 0
+    elif vrot_mc is None:        # If only MCurc isn't there
+        vrot_mc = nan1D
+        vrot_best_index = 1
+    elif vrot_lsq is None:        # If only LSQurc isn't there
+        vrot_lsq = nan1D
+        vrot_best_index = 2
+    else:
+        vrot_best_index = 2
+    vrots = [vrot_s,vrot_lsq,vrot_mc]    # All three smoothed versions, for your convenience.
+    vrot_best = vrots[vrot_best_index]
+    
+    k = epicycles(R,vrot_best)
     
     # Calculate sigma_gal = kappa*Rc
     sigma_gal = k(R)*Rc
@@ -901,7 +928,7 @@ def urc(R, p0, p1, p2):
                      * (x**2/(x**2 + 1.5**2 * p[2]**2)))
     return(vmodel)
     
-def RC(gal,data_mode,mapmode='mom1',smooth='universal',mode='diskfit',returnparams=False, debug=False,\
+def RC(gal,data_mode,mapmode='mom1',smooth='universal',mode='diskfit',returnparams=False,\
        path='/media/jnofech/BigData/galaxies/'):
     '''
     Returns rotcurve specified by
@@ -926,11 +953,10 @@ def RC(gal,data_mode,mapmode='mom1',smooth='universal',mode='diskfit',returnpara
         - "smooth(ed)"  : grabs smoothed rotcurve.
         - "(LSQ)urc" : grabs final, lsq-improved rotcurve.
         - "(MC)urc" : grabs final, MC-improved rotcurve (different method).
+        - "best"    : grabs MC, LSQ, or smoothed URC (in order of descending accuracy).
     returnparams=False : bool
         - False : Returns rotcurve.
         - True  : Returns rotcurve with fit parameters.
-    debug=False : bool
-        Returns 'pos', 'prob', 'state' and nothing more.
         
     Returns:
     --------
@@ -973,35 +999,50 @@ def RC(gal,data_mode,mapmode='mom1',smooth='universal',mode='diskfit',returnpara
             return R,vrot_s
         else:
             return R,vrot_s,vmax,rmax,A
+        
+    def read_rotcurve_npz(savefile):
+        if os.path.isfile(path+'MCurc_save/'+savefile+name.upper()+'_'+data_mode+'_'+smooth+'.npz'):
+            MCurc_data = np.load(path+'MCurc_save/'+savefile+name.upper()+'_'+data_mode+'_'+smooth+'.npz')
+            params_MC     = MCurc_data['egg1'] # Can be LSQ, not necessarily just MC!
+            params_smooth = MCurc_data['egg2']
+            if savefile=='MC_':
+                pos   = MCurc_data['egg3']
+                prob  = MCurc_data['egg4']
+                state = MCurc_data['egg5']
+    #             print('Figure out what pos, prob, and state do!')
+            else:
+                pos, prob, state = [None]*3
+        else:
+            print('rc.RC(): WARNING - MCurc_save/'+savefile+name.upper()+'_'+data_mode+'_'+smooth+'.npz does not exist!')
+            params_MC, params_smooth, pos,prob,state = [None]*5
+        return params_MC, params_smooth, pos,prob,state
     
-    # Read saved MC-URC sampling results
-    if mode.lower() in ['lsq', 'lsqurc', 'ls', 'lsurc']:
-        savefile='LSQ_'
-    elif mode.lower() in ['mc', 'urc', 'mcurc']:
-        savefile='MC_'
-    else:
+    # Read saved MC-URC or LSQ-URC results
+    if mode.lower() in ['mc', 'urc', 'mcurc','best']:
+        params_best, params_smooth, pos,prob,state = read_rotcurve_npz('MC_')
+    if mode.lower() in ['lsq', 'lsqurc', 'ls', 'lsurc'] or (mode.lower() in ['best'] and params_best is None):
+        if mode.lower() in ['best']:
+            print('         Attempting to find LSQurc instead.')
+        params_best, params_smooth, pos,prob,state = read_rotcurve_npz('LSQ_')
+        if params_best is not None and mode.lower() in ['best']:
+            print('         ... LSQ successful!')
+    if mode.lower() not in ['lsq', 'lsqurc', 'ls', 'lsurc','mc', 'urc', 'mcurc','best']:
         raise ValueError('"'+mode+'" is not a valid "mode"! See header for details.')
     
-    if os.path.isfile(path+'MCurc_save/'+savefile+name.upper()+'_'+data_mode+'_'+smooth+'.npz'):
-        MCurc_data = np.load(path+'MCurc_save/'+savefile+name.upper()+'_'+data_mode+'_'+smooth+'.npz')
-        params_MC     = MCurc_data['egg1']
-        params_smooth = MCurc_data['egg2']
-        if savefile=='MC_':
-            pos   = MCurc_data['egg3']
-            prob  = MCurc_data['egg4']
-            state = MCurc_data['egg5']
-            print('Figure out what pos, prob, and state do!')
-            if debug==True:
-                return pos,prob,state
-    else:
-        print('rc.MC(): WARNING - MCurc_save/'+savefile+name.upper()+'_'+data_mode+'_'+smooth+'.npz does not exist!')
-        if savefile=='MC_' and debug==True:
-            return None,None,None
+    # If MC/LSQ/both (depending on 'mode') failed:
+    if params_best is None and mode.lower()=='best':
+        print('         Both MCurc and LSQurc failed; reading smoothed rotcurve instead!')
+        if returnparams==False:
+            return R,vrot_s
+        else:
+            return R,vrot_s,vmax,rmax,A
+    elif params_best is None and mode.lower()!='best':
         if returnparams==False:
             return R,None
         else:
             return R,None,None,None,None
-
+        
+    # If MC/LSQ/either (depending on 'mode') was successful:
     if [vmax,rmax/1000.,A]!=list(params_smooth):
         print('Current URC params (r in pc): '+str([vmax,rmax,A]))
         print('Saved URC params (r in kpc):  '+str(params_smooth))
@@ -1009,7 +1050,7 @@ def RC(gal,data_mode,mapmode='mom1',smooth='universal',mode='diskfit',returnpara
         print('                   The saved file is outdated and needs to be re-generated.')
 
     # Get finalized rotcurve
-    vmax_f,rmax_f,A_f,PA_f = params_MC[0],params_MC[1]*1000.,params_MC[2],params_MC[3]  # Convert kpc to pc
+    vmax_f,rmax_f,A_f,PA_f = params_best[0],params_best[1]*1000.,params_best[2],params_best[3]  # Convert kpc to pc
     
     # BSpline interpolation of vrot_f(R)
     K=3                # Order of the BSpline

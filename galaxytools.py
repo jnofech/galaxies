@@ -24,6 +24,16 @@ import copy
 import os
 import csv
 
+# Import silencer
+import os, sys
+class silence:
+    def __enter__(self):
+        self._original_stdout = sys.stdout
+        sys.stdout = open(os.devnull, 'w')
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        sys.stdout.close()
+        sys.stdout = self._original_stdout
+
 def galaxy(name,customPA=True,custominc=True,customcoords='phil',\
            diskfit_output=False,data_mode='7m',mapmode='mom1'):
     '''
@@ -821,6 +831,7 @@ def mask_get(gal,data_mode,return_boolean=True,\
 
 def sfr_get(gal,hdr=None,conbeam=None,res='7p5',band_uv='nuv',band_ir='w3',autocorrect=False,\
             return_mode='data',\
+            verbose=True,\
             path='/media/jnofech/BigData/PHANGS/Archive/galex_and_wise/'):
     '''
     Recommended: NUV band + WISE Band 3.
@@ -843,7 +854,8 @@ def sfr_get(gal,hdr=None,conbeam=None,res='7p5',band_uv='nuv',band_ir='w3',autoc
         stick with the 15" SFR maps.
     autocorrect=False : bool
         Toggles whether to revert to 15"
-        data if 7.5" is missing.
+        data if 7.5" is missing (which,
+        really, just affects W4 data).
         Recommended to DISABLE if you need
         cubes to be convolved to same res.
         as SFR maps.
@@ -900,26 +912,31 @@ def sfr_get(gal,hdr=None,conbeam=None,res='7p5',band_uv='nuv',band_ir='w3',autoc
     # Autocorrect with 15" version?
     if sfr is None and res=='7p5' and autocorrect==True:
         print('(galaxytools.sfr_get())  WARNING: Unable to get 7.5" SFR map! Reverting to 15" instead.')
-        sfr = sfr_get(gal,hdr,conbeam,band_uv,band_ir,'15',False,path)
+        sfr = sfr_get(gal,hdr,conbeam,'15',band_uv,band_ir,False,return_mode,path)
         return sfr
 
     if sfr is not None:
+        # sfr is a Projection object right now. Turn it into an HDU, then convolve if necessary.
         sfr_hdu = sfr.hdu
         if conbeam!=None:
-            # sfr is a Projection object right now. Turn it into an HDU, then convolve if necessary.
             sfr_hdu = convolve_2D(gal,sfr_hdu,conbeam)  # Convolved SFR map.
         if return_mode=='data':
             return sfr_hdu.data
         elif return_mode.lower() in ['hdu']:
-            print('tools.sfr_get() : WARNING: SFR HDU does not have a totally accurate header; BUNIT is missing, etc. The beam size (BMAJ) is accurate for the SFR map, though!')
+            if verbose:
+                print('tools.sfr_get() : WARNING: SFR HDU does not have a totally accurate header; BUNIT is missing, etc.')
+            if band_uv not in ['nuv']:
+                if verbose:
+                    print('tools.sfr_get() : WARNING: SFR HDU does NOT have an accurate beam size (BMAJ)!')
             return sfr_hdu
         else:
-            print('tools.sfr_get() : Invalid "return_mode"! Must be "data" or "hdu".')
+            raise ValueError('tools.sfr_get() : Invalid "return_mode"! Must be "data" or "hdu".')
     else:
         return sfr
 
 
-def band_get(gal,hdr=None,band='',res='15',sfr_toggle=False,path='/media/jnofech/BigData/PHANGS/Archive/galex_and_wise/'):
+def band_get(gal,hdr=None,band='',res='15',sfr_toggle=False,\
+             path='/media/jnofech/BigData/PHANGS/Archive/galex_and_wise/'):
     '''
     Returns the 'band' map, used to
     generate SFR map.
@@ -967,8 +984,11 @@ def band_get(gal,hdr=None,band='',res='15',sfr_toggle=False,path='/media/jnofech
         return map2d
     
     if hdr!=None:
-        map2d_final = map2d.reproject(hdr)    # NOTE: This gives the final Projection object the same header.
-                                              #   Any changes in 'hdr' will affect the object's header too!
+        hdr_copy = copy.copy(hdr)  # Copy of the original header.
+            # Certain steps of this code (e.g. getting the HDU from Projection object)
+            #   will alter the header, so this is necessary so that the global 'hdr'
+            #   doesn't get altered as well.
+        map2d_final = map2d.reproject(hdr_copy)
     else:
         map2d_final = map2d
     return map2d_final
@@ -2180,7 +2200,7 @@ def bar_info_get(gal,data_mode,radii='arcsec',customPA=True,check_has_bar=False,
 
     return bar_PA, bar_R
    
-def info(gal,conbeam=None,data_mode='',sfr_band_uv='nuv',sfr_band_ir='w3',hasmask=False,sfr_autocorrect=False):
+def info(gal,conbeam=None,data_mode='',hasmask=False,sfr_autocorrect=False):
     '''
     Returns basic info from galaxies.
     Astropy units are NOT attached to outputs.
@@ -2197,19 +2217,12 @@ def info(gal,conbeam=None,data_mode='',sfr_band_uv='nuv',sfr_band_ir='w3',hasmas
     data_mode='12m' or '7m' : str
         Chooses either 12m data or 7m
         data.
-    sfr_band_uv='nuv' : str
-        Selects 'fuv' or 'nuv' as UV
-        band for SFR.
-    sfr_band_ir='w3' : str
-        Selects 'w3' or 'w4' as IR
-        band for SFR.
-        NOTE: nuv+w3 recommended.
-    sfr_autocorrect=False : bool
-        Attempts to get a 15" SFR
-        map if the 7.5" one fails.
     hasmask : bool
         Determines whether a cube
         mask is available.
+    sfr_autocorrect=False : bool
+        Attempts to get a 15" SFR
+        map if the 7.5" one fails.
         
     Returns:
     --------
@@ -2253,37 +2266,26 @@ def info(gal,conbeam=None,data_mode='',sfr_band_uv='nuv',sfr_band_ir='w3',hasmas
     I_tpeak = tpeak_get(gal,data_mode,return_mode='hdu')
     hdr = hdr_get(gal,data_mode,dim=2)
     beam = hdr['BMAJ']                       # In degrees. This is beam size BEFORE convolution,
-                                             #   and we'll need this for the LoS velocity dispersion
-                                             #   (rc.linewidth_iso()).
-    beam_arcsec = (beam*u.deg).to(u.arcsec)  # In arcsec. We want this to be LOWER than the SFR map's 7.5"
-                                             #    beamwidth (i.e. higher resolution), but this often fails
-                                             #    and we need to use 15" SFR maps instead.
+#                                              #   and we'll need this for the LoS velocity dispersion
+#                                              #   (rc.linewidth_iso()).
+#     beam_arcsec = (beam*u.deg).to(u.arcsec)  # In arcsec. We want this to be LOWER than the SFR map's 7.5"
+#                                              #    beamwidth (i.e. higher resolution), but this often fails
+#                                              #    and we need to use 15" SFR maps instead.
     
-    # Choose appropriate resolution for SFR map, changing 'conbeam' to match it if necessary.
-    res='7p5'
-    if beam_arcsec > 7.5*u.arcsec and conbeam is not None:
-        print('(galaxytools.info())     WARNING: Beam is '+str(beam_arcsec)+', and we want to convolve.')
-        print('                                  This will use a 15" SFR map instead of 7.5"!')
-        res='15'
-        if conbeam==7.5*u.arcsec:
-            print('(galaxytools.info())              We\'ll also use a 15" conbeam.')
-            conbeam = 15.*u.arcsec
+#     # Choose appropriate resolution for SFR map, changing 'conbeam' to match it if necessary.
+#     res='7p5'
+#     if beam_arcsec > 7.5*u.arcsec and conbeam is not None:
+#         print('(galaxytools.info())     WARNING: Beam is '+str(beam_arcsec)+', and we want to convolve.')
+#         print('                                  This will use a 15" SFR map instead of 7.5"!')
+#         res='15'
+#         if conbeam==7.5*u.arcsec:
+#             print('(galaxytools.info())              We\'ll also use a 15" conbeam.')
+#             conbeam = 15.*u.arcsec
     
     # Get SFR at this resolution.
-    sfr = sfr_get(gal,hdr,conbeam=None,res=res,band_uv=sfr_band_uv,band_ir=sfr_band_ir,\
-                  autocorrect=sfr_autocorrect,return_mode='hdu') 
-    #     Not convolved yet, despite that being an option.
+    sfr, sfr_best, conbeam_final = sfr_combine(gal,conbeam,data_mode,return_mode='data')
+    conbeam = conbeam_final
     
-    if res=='7p5' and sfr is None and sfr_autocorrect==True:  # If 7.5" isn't found and we want to try lower res:
-        print('(galaxytools.info())     WARNING: 7.5" SFR map not found.\n\
-                                  Will attempt a 15" SFR map instead!')
-        res='15'
-        sfr = sfr_get(gal,hdr,conbeam=None,res=res,band_uv=sfr_band_uv,band_ir=sfr_band_ir,\
-                  autocorrect=sfr_autocorrect,return_mode='hdu')  # Try again with lower resolution.
-    if res=='15' and sfr is not None:  # If a 15" SFR map was successful:
-        if conbeam==7.5*u.arcsec:
-            print('(galaxytools.info())     NOTE:    The 15" SFR map was successful! Changing conbeam from 7.5" to 15".')
-            conbeam=15.*u.arcsec
     # Get cube+mask!
     cube,bestcube = cube_get(gal,data_mode,return_best=True)
     if hasmask==True:
@@ -2297,17 +2299,6 @@ def info(gal,conbeam=None,data_mode='',sfr_band_uv='nuv',sfr_band_ir='w3',hasmas
         hdr, cube = cube_convolved(gal,conbeam,data_mode) # CONVOLVED cube, with replacement header.
         I_mom0  = convolve_2D(gal,I_mom0,conbeam)   # Convolved mom0, from 2D map rather than cube. Maybe unused.
         I_tpeak = convolve_2D(gal,I_tpeak,conbeam)  # Same but for tpeak. Maybe unused.
-        if sfr is not None:
-            if ((sfr.header['BMAJ']*u.deg).to(u.arcsec)).value > conbeam.value:
-                if np.isclose(((sfr.header['BMAJ']*u.deg).to(u.arcsec)).value,conbeam.value):
-                    print('tools.info() - SFR beam ('+str((sfr.header['BMAJ']*u.deg).to(u.arcsec))+') is very close to desired conbeam ('+str(conbeam)+'), but slightly larger\n\
-               (i.e. already lower-res). WILL NOT CONVOLVE, to prevent crashing.')
-                else:
-                    raise ValueError('tools.info() - SFR beam ('+str((sfr.header['BMAJ']*u.deg).to(u.arcsec))+') is way larger than desired conbeam ('+str(conbeam)+'), i.e. already\n\
-               lower-res. THIS SHOULD NEVER HAPPEN.')
-            else:
-                sfr = convolve_2D(gal,sfr,conbeam)  # Convolved SFR map.
-            sfr = sfr.data    
     # Ver 1: From convolved cube (proper). REQUIRES MASK
     if hasmask==True:
 #     Convolve the cube, mask it, and then generate mom0/tpeak/etc with it.
@@ -2316,13 +2307,13 @@ def info(gal,conbeam=None,data_mode='',sfr_band_uv='nuv',sfr_band_ir='w3',hasmas
         cube2 = cube.with_mask(mask)
         I_mom0 = cube2.moment0().to(u.K*u.km/u.s).value
         I_tpeak = cube2.max(axis=0).to(u.K).value
-        return hdr,beam,I_mom0,I_mom1,peakvels,I_tpeak,cube,mask,sfr
+        return hdr,beam,conbeam,I_mom0,I_mom1,peakvels,I_tpeak,cube,mask,sfr,sfr_best
     else:
         raise ValueError('tools.info() - hasmask=False. However, mom0 and tpeak cannot be\
         properly convolved without it. (Is crashing necessary? We did this before.)')
         I_mom0 = cube.moment0().to(u.K*u.km/u.s).value
         I_tpeak = cube.max(axis=0).to(u.K).value
-        return hdr,beam,I_mom0,I_mom1,I_tpeak,cube,sfr
+        return hdr,beam,conbeam,I_mom0,I_mom1,I_tpeak,cube,sfr,sfr_best
         
 #     # Ver 2: From convolved 2D map
 #     # Mask the mom0, tpeak data to match the cube's mask
@@ -2333,6 +2324,95 @@ def info(gal,conbeam=None,data_mode='',sfr_band_uv='nuv',sfr_band_ir='w3',hasmas
 #         return hdr,beam,I_mom0.data,I_mom1,peakvels,I_tpeak.data,cube,mask,sfr
 #     else:
 #         return hdr,beam,I_mom0.data,I_mom1,I_tpeak.data,cube,sfr
+
+def sfr_combine(gal,conbeam=None,data_mode='',return_mode='hdu'):
+    with silence():
+        if isinstance(gal,Galaxy):
+            name = gal.name.lower()
+        elif isinstance(gal,str):
+            name = gal.lower()
+        else:
+            raise ValueError("'gal' must be a str or galaxy!")
+        if data_mode == '7m+tp':
+            print('tools.cube_get(): WARNING: Changing data_mode from 7m+tp to 7m. Will try to select 7m+tp regardless.')
+            data_mode = '7m'
+        elif data_mode in ['12m','12m+7m']:
+            data_mode = '12m+7m'
+        elif data_mode in ['12m+tp','12m+7m+tp']:
+            print('tools.cube_get(): WARNING: Changing data_mode from '+data_mode+' to 12m. Will try to select 12m+tp regardless.')
+            data_mode = '12m+7m'
+        hdr = hdr_get(gal,data_mode,dim=2)
+        beam = hdr['BMAJ']                       # In degrees. This is beam size BEFORE convolution,
+                                                 #   and we'll need this for the LoS velocity dispersion
+                                                 #   (rc.linewidth_iso()).
+        beam_arcsec = (beam*u.deg).to(u.arcsec)  # In arcsec. We want this to be LOWER than the SFR map's 7.5"
+                                                 #    beamwidth (i.e. higher resolution), but this often fails
+                                                 #    and we need to use 15" SFR maps instead.
+    
+    # Choose appropriate resolution for SFR map, changing 'conbeam' to match it if necessary.
+    res='7p5'
+    if beam_arcsec > 7.5*u.arcsec and conbeam is not None:
+        print('(galaxytools.info())     NOTE: Beam is '+str(beam_arcsec)+', and we want to convolve.')
+        print('                               This will use a 15" SFR map instead of 7.5"!')
+        res='15'
+        if conbeam==7.5*u.arcsec:
+            print('(galaxytools.info())           We\'ll also use a 15" conbeam.')
+            conbeam = 15.*u.arcsec
+    
+    # Get useful SFR maps
+    # (Ideally, sfr_final = sfr(nuv+w3, 7.5") * (sfr(fuv+w4, 15") / sfr(nuv+w3, 15")) )
+    with silence():
+        sfr_nuv =     sfr_get(name,hdr,conbeam=None,res=res, band_uv='nuv',band_ir='w3',\
+                      autocorrect=False,return_mode='hdu',verbose=False)  # 7.5" or 15"; Best spatial structure
+        sfr_scale1 =  sfr_get(name,hdr,conbeam=None,res='15',band_uv='fuv',band_ir='w4',\
+                      autocorrect=False,return_mode='hdu',verbose=False)  # 15" fuv+w4, for correcting the scaling
+        sfr_scale2 =  sfr_get(name,hdr,conbeam=None,res='15',band_uv='nuv',band_ir='w3',\
+                      autocorrect=False,return_mode='hdu',verbose=False)  # 15" nuv+w3, for correcting the scaling
+    # COMBINE!
+    if sfr_nuv is not None and sfr_scale1 is not None:
+        sfr_best = '7.5" nuv+w3, corrected'
+        sfr_final = Projection.from_hdu(sfr_nuv) * (sfr_scale1.data)/(sfr_scale2.data)
+    elif sfr_nuv is None and sfr_scale1 is None:
+        sfr_best = 'missing'
+        sfr_final = None
+    elif sfr_nuv is None:
+        sfr_best = '15" fuv'
+        sfr_final = Projection.from_hdu(sfr_scale1)
+    elif sfr_scale1 is None:
+        sfr_best = res.replace('p','.')+'" nuv+w3'
+        sfr_final = Projection.from_hdu(sfr_nuv)
+    else:
+        raise ValueError('tools.sfr_combine() - lolwtf')
+
+    # Check that header is behaving correctly
+    if sfr_final is not None:
+        if sfr_final.hdu.header['BMAJ']!=sfr_nuv.header['BMAJ']:
+            raise ValueError('tools.sfr_combine() - Header information was lost while combining maps. Investigate.')
+    
+    sfr = sfr_final
+    
+    if sfr is not None:
+        # sfr is a Projection object right now. Turn it into an HDU, then convolve if necessary.
+        sfr_hdu = sfr.hdu
+        if conbeam!=None:
+            # CONVOLUTION, if enabled:
+            if ((sfr_hdu.header['BMAJ']*u.deg).to(u.arcsec)).value > conbeam.value:
+                if np.isclose(((sfr_hdu.header['BMAJ']*u.deg).to(u.arcsec)).value,conbeam.value):
+                    print('tools.sfr_combine() - sfr beam ('+str((sfr_hdu.header['BMAJ']*u.deg).to(u.arcsec))+') is very close to desired conbeam ('+str(conbeam)+'), but slightly larger\n\
+               (i.e. already lower-res). WILL NOT CONVOLVE, to prevent crashing.')
+                else:
+                    raise ValueError('tools.info() - sfr beam ('+str((sfr_hdu.header['BMAJ']*u.deg).to(u.arcsec))+') is way larger than desired conbeam ('+str(conbeam)+'), i.e. already\n\
+               lower-res. THIS SHOULD NEVER HAPPEN.')
+            else:
+                sfr_hdu = convolve_2D(gal,sfr_hdu,conbeam)  # Convolved sfr_hdu map.
+        if return_mode=='data':
+            return sfr_hdu.data, sfr_best, conbeam
+        elif return_mode.lower() in ['hdu']:
+            return sfr_hdu, sfr_best, conbeam
+        else:
+            print('tools.sfr_get() : Invalid "return_mode"! Must be "data" or "hdu".')
+    else:
+        return sfr, sfr_best, conbeam
     
 def depletion(Sigma=None,sfr=None):
     '''
@@ -2513,7 +2593,7 @@ def sigmas(gal,hdr=None,I_mom0=None,I_tpeak=None,alpha=6.7,data_mode='',mapmode=
         I_tpeak = tpeak_get(gal,data_mode=data_mode)
     
     # (!!!) Ensure beforehand that the PA is kinematic, not photometric!
-    x, rad, x, x = gal.rotmap(header=hdr,data_mode=data_mode,mapmode=mapmode)
+    x, rad = rc.rotmap(gal,header=hdr,data_mode=data_mode,mapmode=mapmode,rcmode='best')
     d = gal.distance
     d = d.to(u.pc)                                          # Converts d from Mpc to pc.
 

@@ -442,6 +442,7 @@ class Galaxy(object):
             2D arrays of the ranges of Dec and 
             RA (respectively), in degrees.
         '''
+        raise ValueError('Galaxy.rotmap() is now defunct, as it does not use the correctly-smoothed rotcurves. Use rc.rotmap() instead!')
         # data_mode, mapmode
         if mapmode in ['peakvels','vpeak']:
             mapmode = 'vpeak'
