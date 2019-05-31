@@ -38,10 +38,11 @@ class silence:
 #    print("This will not be printed")
 
 def filename_get(name,data_mode='7m',mapmode='mom1',force_same_res=False,\
-                path7m  ='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-LP/working_data/osu/',\
-                path12m ='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-LP/delivery/broad_maps/',\
-                path7m_mask ='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-LP/working_data/osu/eros_masks/',\
-                path12m_mask='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-LP/delivery/cubes/eros_masks/',\
+                path7m  ='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-LP/delivery_v3p3/',\
+                path12m ='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-LP/delivery_v3p3/',\
+                path7m_mask ='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-LP/delivery_v3p3/cubes/eros_masks/',\
+                path12m_mask='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-LP/delivery_v3p3/cubes/eros_masks/',\
+                masking='broad',\
                 folder_vpeak='jnofech_peakvels/',\
                 folder_hybrid='jnofech_mom1_hybrid/'):
     '''
@@ -68,6 +69,13 @@ def filename_get(name,data_mode='7m',mapmode='mom1',force_same_res=False,\
     elif data_mode.lower() in ['both','hybrid']:
         data_mode = 'hybrid'
         
+    if masking.lower() in ['broad','strict']:
+        path_mask = masking.lower()+'_maps/'
+    elif masking.lower() in ['']:
+        path_mask = ''
+    else:
+        raise ValueError('\''+masking+'\' is not a valid \'masking\' setting!')
+        
     if mapmode in ['mom1']:
         mapmode='mom1'
     elif mapmode in ['peakvels','vpeak']:
@@ -79,14 +87,15 @@ def filename_get(name,data_mode='7m',mapmode='mom1',force_same_res=False,\
     # Find filenames for map and error map!
     if data_mode in ['7m','hybrid']:
         if mapmode=='mom1':
-            path = path7m
+            path = path7m+path_mask
         elif mapmode=='peakvels':
-            path = path7m_mask+folder_vpeak
+#            path = path7m+path_mask              # <-- Provided vpeak maps
+            path = path7m_mask+folder_vpeak      # My own generated vpeak maps
         data_mode_temp = '7m'
-        filename_7mtp   = name+'_'+data_mode_temp+'+tp_co21_'+mapmode+'.fits'    # 7m+tp mom1. Ideal.
-        filename_7mtp_e = name+'_'+data_mode_temp+'+tp_co21_e'+mapmode+'.fits'   # 7m+tp emom1. Ideal.
-        filename_7m     = name+'_'+data_mode_temp+   '_co21_'+mapmode+'.fits'    # 7m mom1. Less reliable.
-        filename_7m_e   = name+'_'+data_mode_temp+   '_co21_e'+mapmode+'.fits'   # 7m emom1. Less reliable.
+        filename_7mtp   = name+'_'+data_mode_temp+'+tp_co21_'+masking+'_'+mapmode+'.fits'    # 7m+tp mom1. Ideal.
+        filename_7mtp_e = name+'_'+data_mode_temp+'+tp_co21_'+masking+'_e'+mapmode+'.fits'   # 7m+tp emom1. Ideal.
+        filename_7m     = name+'_'+data_mode_temp+   '_co21_'+masking+'_'+mapmode+'.fits'    # 7m mom1. Less reliable.
+        filename_7m_e   = name+'_'+data_mode_temp+   '_co21_'+masking+'_e'+mapmode+'.fits'   # 7m emom1. Less reliable.
         filename_map = None
         filename_emap = None
         if os.path.isfile(path+filename_7mtp):
@@ -106,24 +115,26 @@ def filename_get(name,data_mode='7m',mapmode='mom1',force_same_res=False,\
                     best_map_7m = 'None'
         if os.path.isfile(path+filename_7m) and (filename_map is None):
             filename_map  = filename_7m
-            filename_emap = name+'_'+data_mode_temp+   '_co21_e'+mapmode+'.fits'
+            filename_emap = name+'_'+data_mode_temp+   '_co21_'+masking+'_e'+mapmode+'.fits'
             best_map_7m='7m'
         if filename_map is None and filename_emap is None:
             filename_map  = "7m "+mapmode+" MISSING!"
             filename_emap = "7m e"+mapmode+" MISSING!"
             best_map_7m = 'None'
+            print(path+filename_7m)
             raise ValueError('Neither 7m nor 7m+tp '+mapmode+' map found!')
         best_map = best_map_7m
     if data_mode in ['12m+7m','hybrid']:
         if mapmode=='mom1':
-            path = path12m
+            path = path12m+path_mask
         elif mapmode=='peakvels':
-            path = path12m_mask+folder_vpeak
+#            path = path12m+path_mask              # <-- Provided vpeak maps
+            path = path12m_mask+folder_vpeak      # My own generated vpeak maps
         data_mode_temp = '12m+7m'
-        filename_12mtp   = name+'_'+data_mode_temp+'+tp_co21_broad_'+mapmode+'.fits'    # 12m+tp mom1. Ideal.
-        filename_12mtp_e = name+'_'+data_mode_temp+'+tp_co21_broad_e'+mapmode+'.fits'   # 12m+tp emom1. Ideal.
-        filename_12m     = name+'_'+data_mode_temp+   '_co21_broad_'+mapmode+'.fits'    # 12m mom1. Less reliable.
-        filename_12m_e   = name+'_'+data_mode_temp+   '_co21_broad_e'+mapmode+'.fits'   # 12m emom1. Less reliable.
+        filename_12mtp   = name+'_'+data_mode_temp+'+tp_co21_'+masking+'_'+mapmode+'.fits'    # 12m+tp mom1. Ideal.
+        filename_12mtp_e = name+'_'+data_mode_temp+'+tp_co21_'+masking+'_e'+mapmode+'.fits'   # 12m+tp emom1. Ideal.
+        filename_12m     = name+'_'+data_mode_temp+   '_co21_'+masking+'_'+mapmode+'.fits'    # 12m mom1. Less reliable.
+        filename_12m_e   = name+'_'+data_mode_temp+   '_co21_'+masking+'_e'+mapmode+'.fits'   # 12m emom1. Less reliable.
         filename_map = None
         filename_emap = None
         if os.path.isfile(path+filename_12mtp):
@@ -143,7 +154,7 @@ def filename_get(name,data_mode='7m',mapmode='mom1',force_same_res=False,\
                     best_map_12m = 'None'
         if os.path.isfile(path+filename_12m) and (filename_map is None):
             filename_map  = filename_12m
-            filename_emap = name+'_'+data_mode_temp+   '_co21_e'+mapmode+'.fits'
+            filename_emap = name+'_'+data_mode_temp+   '_co21_'+masking+'_e'+mapmode+'.fits'
             best_map_12m='12m+7m'
         if filename_map is None and filename_emap is None:
             filename_map  = "12m "+mapmode+" MISSING!"
@@ -153,14 +164,14 @@ def filename_get(name,data_mode='7m',mapmode='mom1',force_same_res=False,\
         best_map = best_map_12m
     if data_mode=='hybrid':
         best_map = 'hybrid_'+best_map_7m+'&'+best_map_12m
-        filename = name+'_co21_'+best_map+'_'+mapmode+'.fits'
+        filename = name+'_co21_'+best_map+'_'+masking+'_'+mapmode+'.fits'
         if mapmode=='mom1':
             path = path12m+folder_hybrid
         elif mapmode=='peakvels':
             path = path12m_mask+folder_vpeak
         if os.path.isfile(path+filename):
             filename_map  = filename
-            filename_emap = name+'_co21_'+best_map+'_e'+mapmode+'.fits'
+            filename_emap = name+'_co21_'+best_map+'_'+masking+'_e'+mapmode+'.fits'
         else:
             filename_map  = "Hybrid "+mapmode+" MISSING!"
             filename_emap = "Hybrid e"+mapmode+" MISSING!"
@@ -178,10 +189,11 @@ def gen_input(name,data_mode='7m',mapmode='mom1',errors=False,errors_exist=False
               toggle_bar_PA_over=None,\
               customcoords='phil',\
               debug=False,\
-              path7m  ='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-LP/working_data/osu/',\
-              path12m ='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-LP/delivery/broad_maps/',\
-              path7m_mask ='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-LP/working_data/osu/eros_masks/',\
-              path12m_mask='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-LP/delivery/cubes/eros_masks/',\
+              path7m  ='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-LP/delivery_v3p3/',\
+              path12m ='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-LP/delivery_v3p3/',\
+              path7m_mask ='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-LP/delivery_v3p3/cubes/eros_masks/',\
+              path12m_mask='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-LP/delivery_v3p3/cubes/eros_masks/',\
+              masking='broad',\
               folder_vpeak='jnofech_peakvels/',\
               folder_hybrid='jnofech_mom1_hybrid/',\
               diskfit_folder='diskfit_procedural/'):
@@ -252,6 +264,12 @@ def gen_input(name,data_mode='7m',mapmode='mom1',errors=False,errors_exist=False
         print('Invalid mapmode set. Defaulted to "mom1".')
         data_mode = 'mom1' 
         
+    if masking.lower() in ['broad','strict']:
+        path_mask = masking.lower()+'_maps/'
+    elif masking.lower() in ['']:
+        path_mask = ''
+    else:
+        raise ValueError('\''+masking+'\' is not a valid \'masking\' setting!')
         
     # Report which iteration we're on!
     print("\nCreating iteration #"+str(iteration)+"'s input:")
@@ -259,8 +277,7 @@ def gen_input(name,data_mode='7m',mapmode='mom1',errors=False,errors_exist=False
     
     # Find filenames for map and error map!
     filename_map, filename_emap = filename_get(name,data_mode,mapmode,True,path7m,path12m,path7m_mask,path12m_mask,\
-                                               folder_vpeak,folder_hybrid)
-            
+                                               masking,folder_vpeak,folder_hybrid)
 
     # Get the mom1 map and stuff!
     # (!) Will need to update for peakvels and noise and such!
@@ -270,9 +287,11 @@ def gen_input(name,data_mode='7m',mapmode='mom1',errors=False,errors_exist=False
         data_mode_temp = data_mode
 #    hdr, beam, x, I_mom1, x, x, x, x, x = tools.info(gal,None,data_mode_temp)
 #    hdr, beam, x, I_mom1, x, x, x, = tools.info(gal,None,data_mode_temp,hasmask=False)
-    with silence():
-        hdr, beam, x, x, I_mom1, x, x, x, x, x = tools.info(gal,None,data_mode_temp,hasmask=True)
-    I_mom1 = tools.mom1_get(gal,data_mode)
+#    with silence():
+#        hdr, beam, x, x, I_mom1, x, x, x, x = tools.info(gal,None,data_mode_temp,hasmask=False)
+    hdr = tools.hdr_get(gal,data_mode_temp,dim=2)
+    beam = hdr['BMAJ']
+    I_mom1 = tools.mom1_get(gal,data_mode,masking=masking)
     
     # Initialize!
     alteration_label = ['PA_altered','eps_altered','coords_altered','vsys_altered','bar_PA_altered',\
@@ -483,7 +502,7 @@ def gen_input(name,data_mode='7m',mapmode='mom1',errors=False,errors_exist=False
     Y = ((Y.to(u.pc) / gal.distance.to(u.pc)).value * u.rad.to(u.arcsec)) / pixsizes_arcsec.value # In pixels.
     R = np.sqrt(X**2+Y**2)
     phi = np.arctan2(Y,X)
-    index = (np.abs(np.cos(phi)) > 0.3)*(~np.isnan(I_mom1))  # Only consider points where cos(phi) is large so vobs doesn't diverge.
+    index = (np.abs(np.cos(phi)) > 0.8)*(~np.isnan(I_mom1))  # Only consider points where cos(phi) is large so vobs doesn't diverge.
     # Determine radius range!
     radius_max_pix = np.percentile(R[index],98.5)
     radius_min_pix = np.percentile(R[index],0.40)
@@ -502,15 +521,19 @@ def gen_input(name,data_mode='7m',mapmode='mom1',errors=False,errors_exist=False
 
     # CUSTOM radius range, if any!
     if name.lower()=='ngc1317':
-        radius_max_pix = np.percentile(R[~np.isnan(I_mom1)*index],94.0)
+        radius_max_pix = np.percentile(R[~np.isnan(I_mom1)*index],82.0)
         radius_min_pix = np.percentile(R[~np.isnan(I_mom1)*index],0.4)
-        n_radii = 17
+        n_radii = 10
+    if name.lower()=='ngc1433':
+        radius_max_pix = np.percentile(R[~np.isnan(I_mom1)*index],97.0)
+        radius_min_pix = np.percentile(R[~np.isnan(I_mom1)*index],0.4)
+        n_radii = 14
     if name.lower()=='ngc1511':
         n_radii = 18
     if name.lower()=='ngc1512':
         radius_max_pix = np.percentile(R[~np.isnan(I_mom1)*index],95.0)
         radius_min_pix = np.percentile(R[~np.isnan(I_mom1)*index],10.0)
-        n_radii = 18
+        n_radii = 15
     if name.lower()=='ngc1546':
         radius_max_pix = np.percentile(R[~np.isnan(I_mom1)*index],98.0)
         radius_min_pix = np.percentile(R[~np.isnan(I_mom1)*index],0.5)
@@ -537,7 +560,13 @@ def gen_input(name,data_mode='7m',mapmode='mom1',errors=False,errors_exist=False
         n_radii = 18
     if name.lower()=='ngc4548':
         radius_max_pix = np.percentile(R[~np.isnan(I_mom1)*index],97.0)
-        radius_min_pix = np.percentile(R[~np.isnan(I_mom1)*index],10.0)
+        radius_min_pix = np.percentile(R[~np.isnan(I_mom1)*index],17.0)
+        n_radii = 13
+#    if name.lower()=='ngc4569':
+#        radius_max_pix = np.percentile(R[~np.isnan(I_mom1)*index],97.0)
+#        radius_min_pix = np.percentile(R[~np.isnan(I_mom1)*index],0.40)
+    if name.lower()=='ngc4731':
+        n_radii = 12
     if name.lower()=='ngc4781':
         n_radii = 20
     if name.lower()=='ngc4826':
@@ -556,8 +585,12 @@ def gen_input(name,data_mode='7m',mapmode='mom1',errors=False,errors_exist=False
         radius_max_pix = np.percentile(R[~np.isnan(I_mom1)*index],95.5)
         radius_min_pix = np.percentile(R[~np.isnan(I_mom1)*index],5.0)
     if name.lower()=='ngc7456':
-        n_radii = 18
-
+        radius_max_pix = np.percentile(R[index],95.5)
+        radius_min_pix = np.percentile(R[index],2.00)
+        n_radii = 14
+    
+    print(radius_min_pix, radius_max_pix)
+    
     if toggle_beam_smear==True:
         n_radii = int((radius_max_pix - radius_min_pix)/(2*float(beam_smear)))
     radius_pix = np.linspace(radius_min_pix,radius_max_pix,n_radii)                  # Radius array, in pixels.
@@ -1130,7 +1163,7 @@ def read_all_outputs(gal,mode='params',diskfit_folder='diskfit_procedural/',use_
     print('dig.read_all_outputs(): WARNING: Only considering 7m data for bar information!')
     if np.isnan(vsys_orig):
         print('dig.read_all_outputs : WARNING - gal.vsys is NaN! Taking mean value of 7m mom1 map.')
-        I_mom1 = tools.mom1_get(gal,'7m')
+        I_mom1 = tools.mom1_get(gal,'7m',masking=masking)
         vsys_orig = np.nanmean(I_mom1)*u.km/u.s
 
     # Generate Alterations only!
