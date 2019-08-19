@@ -842,7 +842,7 @@ def urc(R, p0, p1, p2):
     return(vmodel)
     
 def RC(gal,data_mode,mapmode='mom1',smooth='universal',mode='diskfit',returnparams=False,\
-       knots=3,\
+       knots=3,returnknots=False,\
        path='/media/jnofech/BigData/galaxies/'):
     '''
     Returns rotcurve specified by
@@ -872,8 +872,11 @@ def RC(gal,data_mode,mapmode='mom1',smooth='universal',mode='diskfit',returnpara
     returnparams=False : bool
         - False : Returns rotcurve.
         - True  : Returns rotcurve with fit parameters.
-    knots=3 : int
+    knots=-1 : int
         Number of knots if mode=='spline'.
+    returnknots=False : bool
+        - False : Returns rotcurve.
+        - True  : Returns rotcurve with number of knots (in case it's a custom value).
         
     Returns:
     --------
@@ -914,8 +917,22 @@ def RC(gal,data_mode,mapmode='mom1',smooth='universal',mode='diskfit',returnpara
         return R,vrot,R_e,vrot_e
     
     if mode.lower() in ['spl','spline']:
+        if knots==-1:
+            if name.upper()=='NGC1566':
+                knots=12
+            elif name.upper()=='NGC3521':
+                knots=9
+            elif name.upper()=='NGC3621':
+                knots=7
+                print('aye')
+            else:
+                print('rc.RC() - WARNING: No custom knots. Spline fit will be crappy')
+                knots=3
         R,vrot_spl = rotcurve_smooth(R,vrot,R_e,vrot_e,smooth='spline',knots=knots)
-        return R,vrot_spl
+        if returnknots==True:
+            return R,vrot_spl,knots
+        else:
+            return R,vrot_spl
     
     R,vrot_s,vmax,rmax,A = rotcurve_smooth(R,vrot,R_e,vrot_e,smooth=smooth,returnparams=True)
     if mode.lower() in ['smooth','smoothed','urc','universal']:
@@ -937,7 +954,8 @@ def RC(gal,data_mode,mapmode='mom1',smooth='universal',mode='diskfit',returnpara
             else:
                 pos, prob, state = [None]*3
         else:
-            print('rc.RC(): WARNING - MCurc_save/'+savefile+name.upper()+'_'+data_mode+'_'+smooth+'.npz does not exist!')
+            if mode.lower() in ['mc', 'mcurc']:
+                print('rc.RC(): WARNING - MCurc_save/'+savefile+name.upper()+'_'+data_mode+'_'+smooth+'.npz does not exist!')
             params_MC, params_smooth, pos,prob,state = [None]*5
         return params_MC, params_smooth, pos,prob,state
     
@@ -945,11 +963,11 @@ def RC(gal,data_mode,mapmode='mom1',smooth='universal',mode='diskfit',returnpara
     if mode.lower() in ['mc', 'mcurc','best']:
         params_best, params_smooth, pos,prob,state = read_rotcurve_npz('MC_')
     if mode.lower() in ['lsq', 'lsqurc', 'ls', 'lsurc'] or (mode.lower() in ['best'] and params_best is None):
-        if mode.lower() in ['best']:
-            print('         Attempting to find LSQurc instead.')
+#        if mode.lower() in ['best']:
+#            print('         Attempting to find LSQurc instead.')
         params_best, params_smooth, pos,prob,state = read_rotcurve_npz('LSQ_')
-        if params_best is not None and mode.lower() in ['best']:
-            print('         ... LSQ successful!')
+#        if params_best is not None and mode.lower() in ['best']:
+#            print('         ... LSQ successful!')
     if mode.lower() not in ['lsq', 'lsqurc', 'ls', 'lsurc','mc', 'mcurc','best']:
         raise ValueError('"'+mode+'" is not a valid "mode"! See header for details.')
     

@@ -525,8 +525,8 @@ def gen_input(name,data_mode='7m',mapmode='mom1',errors=False,errors_exist=False
         radius_min_pix = np.percentile(R[~np.isnan(I_mom1)*index],0.4)
         n_radii = 10
     if name.lower()=='ngc1433':
-        radius_max_pix = np.percentile(R[~np.isnan(I_mom1)*index],97.0)
-        radius_min_pix = np.percentile(R[~np.isnan(I_mom1)*index],0.4)
+        radius_max_pix = np.percentile(R[~np.isnan(I_mom1)*index],98.0)
+        radius_min_pix = np.percentile(R[~np.isnan(I_mom1)*index],17.0)
         n_radii = 14
     if name.lower()=='ngc1511':
         n_radii = 18
@@ -559,8 +559,8 @@ def gen_input(name,data_mode='7m',mapmode='mom1',errors=False,errors_exist=False
     if name.lower()=='ngc4540':
         n_radii = 18
     if name.lower()=='ngc4548':
-        radius_max_pix = np.percentile(R[~np.isnan(I_mom1)*index],97.0)
-        radius_min_pix = np.percentile(R[~np.isnan(I_mom1)*index],17.0)
+#        radius_max_pix = np.percentile(R[~np.isnan(I_mom1)*index],97.0)
+        radius_min_pix = np.percentile(R[~np.isnan(I_mom1)*index],2.0)
         n_radii = 13
 #    if name.lower()=='ngc4569':
 #        radius_max_pix = np.percentile(R[~np.isnan(I_mom1)*index],97.0)

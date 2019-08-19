@@ -16,6 +16,9 @@ from scipy import interpolate
 from scipy.interpolate import BSpline, make_lsq_spline
 from scipy.stats import binned_statistic
 
+# Import Jiayi's code for Alpha
+from AlmaTools import XCO
+
 from galaxies.galaxies import Galaxy
 import rotcurve_tools as rc
 import diskfit_input_generator as dig
@@ -49,7 +52,7 @@ def galaxy(name,\
     customPA=True : bool
         Can also be a string, 'LSQ' or 'MC', to
         grab fitted PA from the LSQ-URC or MC-URC.
-        Requires data_mode='7m', mapmode='mom1'.
+        Requires mapmode='mom1'.
     custominc='phil' : bool OR str
     customcoords='phil' : bool OR str
         customcoords='p','phil','philipp':
@@ -76,8 +79,8 @@ def galaxy(name,\
     # Custom PA
     if isinstance(customPA,str):
         # Check if data_mode and mapmode are good:
-        if (data_mode=='7m' and mapmode=='mom1')==False:
-            raise ValueError('tools.galaxy() : Cannot use "customPA='+customPA+'" unless data_mode=\'7m\', mapmode=\'mom1\'.')
+        if (mapmode=='mom1')==False:
+            raise ValueError('tools.galaxy() : Cannot use "customPA='+customPA+'" unless mapmode=\'mom1\'.')
         if customPA.lower() in ['lsq', 'lsqurc', 'ls', 'lsurc']:
             MCurc_savefile='LSQ_'
         elif customPA.lower() in ['mc', 'urc', 'mcurc']:
@@ -86,8 +89,8 @@ def galaxy(name,\
             raise ValueError('"'+customPA+'" is not a valid "customPA"! See header for details.')
         smooth = 'universal'
         print('tools.galaxy(customPA='+customPA+') : smooth=universal is assumed.')
-        if os.path.isfile('MCurc_save/'+MCurc_savefile+name.upper()+'_'+data_mode+'_'+smooth+'.npz'):
-            MCurc_data = np.load('MCurc_save/'+MCurc_savefile+name.upper()+'_'+data_mode+'_'+smooth+'.npz')
+        if os.path.isfile('/media/jnofech/BigData/galaxies/MCurc_save/'+MCurc_savefile+name.upper()+'_'+data_mode+'_'+smooth+'.npz'):
+            MCurc_data = np.load('/media/jnofech/BigData/galaxies/MCurc_save/'+MCurc_savefile+name.upper()+'_'+data_mode+'_'+smooth+'.npz')
             params_MC     = MCurc_data['egg1']
             PA_MC = (params_MC[3]*u.rad).to(u.deg)
             # ^ This will overwrite any other PA at the end of this function.
@@ -1095,6 +1098,8 @@ def band_get(gal,hdr=None,band='',res='15',sfr_toggle=False,\
         map2d_final = map2d.reproject(hdr_copy)
     else:
         map2d_final = map2d
+    if map2d_final is not None and ~isinstance(map2d_final,u.Quantity):
+        map2d_final = map2d_final*u.K/u.K  # Converts to Quantity to prevent inconsistencies
     return map2d_final
     
 def band_check(name,res,band1,band2='None',\
@@ -2630,7 +2635,7 @@ def info(gal,data_mode='',conbeam=None,hasmask=False,masking='strict'):
     Returns:
     --------
     hdr : fits.header.Header
-        Header for the galaxy.
+        Unmodified header for the galaxy.
     beam : float
         Beam width, in deg.
     I_mom0 : np.ndarray
@@ -2767,6 +2772,7 @@ def sfr_combine(gal,data_mode='',conbeam=None,return_mode='data', return_best=Fa
         sfr_final = Projection.from_hdu(sfr_nuv) * (sfr_scale1.data)/(sfr_scale2.data)
     elif sfr_nuv is None and sfr_scale1 is None:
         sfr_best = 'missing'
+        print('tools.sfr_combine() : fuv+w4 and nuv+w3 both missing.')
         sfr_final = None
     elif sfr_nuv is None:
         sfr_best = '15" fuv'
@@ -2775,7 +2781,8 @@ def sfr_combine(gal,data_mode='',conbeam=None,return_mode='data', return_best=Fa
     elif sfr_scale1 is None:
         sfr_best = res.replace('p','.')+'" nuv+w3'
         sfr_final = Projection.from_hdu(sfr_nuv)
-        raise ValueError('tools.sfr_combine() : fuv+w4 missing. We only want galaxies with nuv+w3 AND fuv+w4!')
+        sfr_final = None  # Actually, don't bother-- better to return a nonsensical SFR map.
+        print('tools.sfr_combine() : fuv+w4 missing. We only want galaxies with nuv+w3 AND fuv+w4!')
     else:
         raise ValueError('tools.sfr_combine() - lolwtf')
 
@@ -2881,7 +2888,7 @@ def map2D_to_1D(rad,maps,stride=1):
     
     Parameters:
     -----------
-    rad : np.ndarray
+    rad : u.Quantity (array-like)
         2D map of galaxy radii, in pc.
     maps : list
         List of 2D maps that you want organized.
@@ -2921,7 +2928,7 @@ def map2D_to_1D(rad,maps,stride=1):
     # Returning everything!
     return rad1D,maps
 
-def sigmas(gal,hdr=None,I_mom0=None,I_tpeak=None,alpha=6.7,data_mode='',mapmode='mom1',sigmode=''):
+def sigmas(gal,hdr=None,I_mom0=None,I_tpeak=None,alpha=6.2,data_mode='',mapmode='mom1',sigmode=''):
     '''
     Returns things like 'sigma' (line width, in km/s)
     or 'Sigma' (surface density) for a galaxy. The
@@ -3008,7 +3015,7 @@ def sigmas(gal,hdr=None,I_mom0=None,I_tpeak=None,alpha=6.7,data_mode='',mapmode=
     # Line width, Surface density
     #alpha = 6.7  # (???) Units: (Msun pc^-2) / (K km s^-1)
     sigma = I_mom0 / (np.sqrt(2*np.pi) * I_tpeak)
-    Sigma = alpha*I_mom0   # (???) Units: Msun pc^-2
+    Sigma = alpha*I_mom0   # Units: Msun pc^-2
     
     if sigmode=='sigma':
         return rad, sigma
@@ -3296,3 +3303,618 @@ def convolve_2D(gal,map2d,conbeam):
 #    sigma, mu = beam_pixwidth, 0.0
 #    g = (np.exp(-( (d-mu)**2 / ( 2.0 * sigma**2 ) ) ) / (sigma*np.sqrt(2.*np.pi)))
 #    return g
+
+def galaxies_gen(data_mode='7m',data_mode_sfr='either',\
+                 exclude_missing_sfr=[''],\
+                 exclude_low_incl=False,\
+                 exclude_custom=['NGC3239'],\
+                 include_sfr=[''],\
+                 include_missing_sfr=[''],\
+                 include_low_incl=False,\
+                 include_custom=[''],\
+                 sfr_min_res=999999*u.arcsec,\
+                 cube_min_res=999999*u.arcsec,\
+                 min_res=None,\
+                 folder_cubes='/media/jnofech/BigData/PHANGS/Archive/PHANGS-ALMA-LP/working_data/osu/',\
+                 folder_sfr  ='/media/jnofech/BigData/PHANGS/Archive/galex_and_wise/'):
+    '''
+    Generates a list of galaxy names based on input parameters.
+    Will operate in EXCLUSION or INCLUSION mode, based on which custom
+    inputs are changed.
+    
+    Parameters:
+    -----------
+        data_mode(='7m') : str
+            '7m'  - selects from galaxies with 7m data
+            '12m' - selects from galaxies with 12m data
+        data_mode_sfr(='either') : str
+            '7p5'    - selects from galaxies with 7.5" SFR data
+            '15'     - selects from galaxies with 15" SFR data
+            'either' - selects from galaxies if criteria are met in 7.5" **OR** 15" SFR data
+            'both'   - selects from galaxies if criteria are met in 7.5" **AND** 15" SFR data
+
+        EXCLUSIONS (Excludes certain galaxies from the set specified above):
+        -----------
+        exclude_low_incl(=False) : bool
+            Excludes face-on galaxies.
+        exclude_missing_sfr(=['']) : list
+            List of SFR map components ('fuv','w4','nuv','w3',
+            'fuv+w4','nuv+w3'). If a galaxy DOESN'T have data in ONE of these
+            SFR map components in 'data_mode_sfr' resolution, it is EXCLUDED.
+        exclude_custom(=['NGC3239']) : list
+            Excludes any galaxy in this list. Does NOT trigger exclusion mode.
+            
+        INCLUSIONS (Includes ONLY certain galaxies, provided they're in the set specified above):
+        -----------
+        include_low_incl(=False) : bool
+            If a galaxy has low incl, it is INCLUDED.
+        include_sfr(=[]) : list
+            List of SFR map components ('fuv','w4','nuv','w3',
+            'fuv+w4','nuv+w3'). If a galaxy DOES have data in ALL of these
+            SFR map components in 'data_mode_sfr' resolution, it is INCLUDED.
+        include_custom(=[]) : list
+            Includes any galaxy in this list.
+    '''
+    # Resolution restrictions - convert to angle
+    if min_res is None:
+        if sfr_min_res in ['500pc','750pc','1000pc','1250pc']:
+            sfr_min_res = int(sfr_min_res.replace('pc',''))*u.pc
+        if sfr_min_res.unit in {u.pc, u.kpc, u.Mpc}:
+            sfr_min_res = sfr_min_res.to(u.pc)                         # Maximum beam width, in pc.
+        elif sfr_min_res.unit in {u.arcsec, u.arcmin, u.deg, u.rad}:
+            sfr_min_res = sfr_min_res.to(u.arcsec)                     # Maximum beam width, in arcec.
+        else:
+            raise ValueError("'sfr_min_res' must have units of pc or arcsec.")
+        if cube_min_res in ['500pc','750pc','1000pc','1250pc']:
+            cube_min_res = int(cube_min_res.replace('pc',''))*u.pc
+        if cube_min_res.unit in {u.pc, u.kpc, u.Mpc}:
+            cube_min_res = cube_min_res.to(u.pc)                         # Maximum beam width, in pc.
+        elif cube_min_res.unit in {u.arcsec, u.arcmin, u.deg, u.rad}:
+            cube_min_res = cube_min_res.to(u.arcsec)                     # Maximum beam width, in arcec.
+        else:
+            raise ValueError("'cube_min_res' must have units of pc or arcsec.")
+    else:
+        # Overrides both sfr_min_res and cube_min_res!
+        if min_res in ['500pc','750pc','1000pc','1250pc']:
+            min_res = int(min_res.replace('pc',''))*u.pc
+        if min_res.unit in {u.pc, u.kpc, u.Mpc}:
+            sfr_min_res = min_res.to(u.pc)                         # Maximum beam width, in pc.
+            cube_min_res = min_res.to(u.pc)                         # Maximum beam width, in pc.
+        elif min_res.unit in {u.arcsec, u.arcmin, u.deg, u.rad}:
+            sfr_min_res = min_res.to(u.arcsec)                     # Maximum beam width, in arcec.
+            cube_min_res = min_res.to(u.arcsec)                     # Maximum beam width, in arcec.
+        else:
+            raise ValueError("'min_res' must have units of pc or arcsec.")
+            
+    # Select inclusion/exclusion mode:
+    mode = ''
+    if (include_sfr!=[''] or include_missing_sfr!=[''] or include_low_incl!=False or include_custom!=['']):
+        mode='inclusion'
+        if include_sfr!=[''] and include_missing_sfr!=['']:
+            raise ValueError('fancyplot.galaxies_gen() : Cannot include both SFR and missing-SFR! Pick one, not both!')
+    if (exclude_missing_sfr!=[''] or exclude_low_incl!=False):
+        if mode=='inclusion':
+            raise ValueError('fancyplot.galaxies_gen() : Cannot specify EXCLUSIONS and INCLUSIONS at the same time! Check inputs.')
+        mode='exclusion'
+    
+    # Workaround for if inclusion/exclusion lists are simply strings:
+    consideration_list = [exclude_missing_sfr,exclude_custom,include_missing_sfr,include_sfr,include_custom]
+    for i in range(0,len(consideration_list)):
+        if type(consideration_list[i])==str:
+            consideration_list[i] = list([consideration_list[i]])
+    exclude_missing_sfr,exclude_custom,include_missing_sfr,include_sfr,include_custom = consideration_list
+    
+    # Base sets:
+    # 7m Dataset
+    galaxies_7m    = ['IC1954','IC5273','IC5332','NGC0628','NGC0685',\
+                       'NGC1087','NGC1097','NGC1300','NGC1317','NGC1365',\
+                       'NGC1385','NGC1433','NGC1511','NGC1512','NGC1546',\
+                       'NGC1559','NGC1566','NGC1637','NGC1672','NGC1792',\
+                       'NGC1809','NGC2090','NGC2283','NGC2566','NGC2775',\
+                       'NGC2835','NGC2903','NGC2997','NGC3059','NGC3137',\
+                       'NGC3239','NGC3351','NGC3507','NGC3511','NGC3521',\
+                       'NGC3596','NGC3621','NGC3626','NGC3627','NGC4207',\
+                       'NGC4254','NGC4293','NGC4298','NGC4303','NGC4321',\
+                       'NGC4424','NGC4457','NGC4496A','NGC4535','NGC4536',\
+                       'NGC4540','NGC4548','NGC4569','NGC4571','NGC4579',\
+                       'NGC4654','NGC4689','NGC4694','NGC4731','NGC4781',\
+                       'NGC4826','NGC4941','NGC4951','NGC5042','NGC5068',\
+                       'NGC5128','NGC5134','NGC5248','NGC5530','NGC5643',\
+                       'NGC6300','NGC6744','NGC7456','NGC7496']
+
+    # 12m Dataset
+    # PHANGS-ALMA-v1p0
+    # galaxies_list = ['IC5332',  'NGC0628','NGC1672','NGC2835','NGC3351',\
+    #                  'NGC3627', 'NGC4254','NGC4303','NGC4321','NGC4535',\
+    #                  'NGC5068', 'NGC6744']
+    # PHANGS-ALMA-LP/delivery/cubes
+    galaxies_12m    = ['IC1954','IC5273','IC5332','NGC0628','NGC0685',\
+                        'NGC1317','NGC1365','NGC1511','NGC1672','NGC1809',\
+                        'NGC2090','NGC2283','NGC2566','NGC2775','NGC2835',\
+                        'NGC3059','NGC3137','NGC3239','NGC3351','NGC3507',\
+                        'NGC3511','NGC3596','NGC3626','NGC3627','NGC4207',\
+                        'NGC4254','NGC4293','NGC4298','NGC4303','NGC4321',\
+                        'NGC4424','NGC4457','NGC4496A','NGC4535','NGC4540','NGC4548',\
+                        'NGC4569','NGC4571','NGC4579','NGC4654','NGC4689',\
+                        'NGC4694','NGC4826','NGC4941','NGC4951','NGC5042',\
+                        'NGC5068','NGC5134','NGC5248','NGC5530','NGC5643',\
+                        'NGC6300','NGC6744','NGC7456','NGC7496']
+    
+    # SFR res settings:
+    if data_mode_sfr in ['7p5','7.5']:
+        res = ['7p5']
+        res_quantity = [7.5]*u.arcsec
+    elif data_mode_sfr in ['15']:
+        res = ['15']
+        res_quantity = [15]*u.arcsec
+    elif data_mode_sfr in ['either','both']:
+        res = ['7p5','15']
+        res_quantity = [7.5,15]*u.arcsec
+    else:
+        raise ValueError('galaxies_gen() : data_mode_sfr=\''+str(data_mode_sfr)+'\' is invalid')
+
+    # SELECT BASE SET OF GALAXIES.
+    if data_mode=='12m':
+        galaxies_set = galaxies_12m
+    elif data_mode=='7m':
+        galaxies_set = galaxies_7m
+    else:
+        raise ValueError('galaxies_gen() : data_mode=\''+data_mode+'\' not supported! (May include +tp later?)')
+        
+    # SELECT GALAXIES WITH GOOD/BAD INCLINATIONS.
+    galaxies_lowincl = ['IC5332', 'NGC0628', 'NGC1317', 'NGC1365', 'NGC1433', 'NGC1672',
+                        'NGC2566', 'NGC3059', 'NGC3507', 'NGC3596', 'NGC3626', 'NGC4303',
+                        'NGC4548', 'NGC4731', 'NGC5134', 'NGC5643']
+    galaxies_highincl = [e for e in galaxies_set if e not in galaxies_lowincl]     # Galaxies not in low_incl
+    
+    # SELECT BANDS BASED ON MODE
+    bands = 'null'
+    if mode=='inclusion':
+        bands = list(np.sort(list(set(np.append(include_sfr,include_missing_sfr)))))
+        bands = [e for e in bands if e not in ['']]    # Deletes [''] that may show up by default
+        bands
+    if mode in ['exclusion']:
+        bands = exclude_missing_sfr
+        bands = [e for e in bands if e not in ['']]    # Deletes [''], but probably redundant
+    if mode in ['']:  # DEFAULT; no specific inclusions/exclusions
+        bands = ['fuv','nuv','w3','w4']                # Check them all!
+#     print('Checking: res='+str(res)+',\n          bands='+str(bands)+',\n          mode='+mode)
+
+    # Check which galaxies are missing SFR maps (initialization)
+    galaxies_detectedsfr = np.array([0]*len(galaxies_set)*len(res)).reshape(len(res),len(galaxies_set))
+                        # ^  Counts the number of SFR maps detected for each galaxy,
+                        #    after checking all checkable bands and resolutions.
+                        #        exclusion mode : Galaxy excluded if galaxies_detectedsfr[i]<(nbands*nresolutions)
+                        #        inclusion mode : Galaxy included if galaxies_detectedsfr[i]==(nbands*nresolutions)
+                        #        inclusion mode, missing : Galaxy included if 
+                        #                                  galaxies_detectedsfr[i]<(nbands*nresolutions)
+    # Initialize best SFR+CUBE resolutions in each galaxy
+    galaxies_set_b = list(np.copy(galaxies_set))               # Backup set of galaxies
+    galaxies_bestres = [999999]*len(galaxies_set_b)*u.arcsec   # Best SFR resolution for each galaxy.
+    galaxies_bestcuberes = [999999]*len(galaxies_set_b)*u.pc     # Best CUBE resolution for each galaxy
+    # Define minimum allowed resolution for each galaxy's SFR+CUBE maps, in " OR pc
+    galaxies_sfr_min_res = [sfr_min_res.value]*len(galaxies_set_b)*(sfr_min_res.unit)
+    galaxies_cube_min_res = [cube_min_res.value]*len(galaxies_set_b)*(cube_min_res.unit)
+    # Read Philipp's galaxy distances
+    gal_distances = distance_get(galaxies_set_b)         # Distances of each galaxy, in Mpc
+    # Convert SFR resolution restrictions to "
+    if galaxies_sfr_min_res.unit==u.pc:
+        galaxies_sfr_min_res = (galaxies_sfr_min_res / gal_distances.to(u.pc) * u.rad).to(u.arcsec)  # To arcsec.
+    elif galaxies_sfr_min_res.unit==u.arcsec:
+        galaxies_sfr_min_res  # Do nothing.
+    else:
+        raise ValueError('galaxies_sfr_min_res must be in pc or arcsec.') 
+    # Convert CUBE resolution restrictions to pc
+    if galaxies_cube_min_res.unit==u.pc:
+        galaxies_cube_min_res  # Do nothing.
+    elif galaxies_cube_min_res.unit==u.arcsec:
+        galaxies_cube_min_res = galaxies_cube_min_res.to(u.rad).value * gal_distances.to(u.pc)  # To pc.
+    else:
+        raise ValueError('galaxies_cube_min_res must be in pc or arcsec.')
+    
+    for k in range(0,len(res)):
+        for j in range(0,len(bands)):
+            for i in range(0,len(galaxies_set)):
+                name = galaxies_set[i]
+                # Define maximum allowed beam width for this galaxy
+                # If a useful combination of bands is already specified:
+                if bands[j].lower() in ['fuv+w4','nuv+w3']:
+                    if bands[j].lower() in ['fuv+w4']:
+                        band1 = 'fuv'
+                        band2 = 'w4'
+                    else:
+                        band1 = 'nuv'
+                        band2 = 'w3'
+                    sfr_hasmap = band_check(name,res[k],band1,band2)
+                # If it's an individual band:
+                elif bands[j].lower() in ['fuv','nuv','w2','w3','w4']:
+                    sfr_hasmap = band_check(name,res[k],bands[j].lower())
+                # If no band is specified:
+                #   then we only exclude the galaxy if ALL maps are missing.
+                elif bands[j].lower() in ['']:
+                    raise ValueError('Null (\'\') band detected; this shouldn\'t ever happen!')
+                    sfr_hasmap1 = band_check(name,res[k],'fuv'.lower())
+                    sfr_hasmap2 = band_check(name,res[k],'nuv'.lower())
+                    sfr_hasmap3 = band_check(name,res[k],'w3'.lower())
+                    sfr_hasmap4 = band_check(name,res[k],'w4'.lower())
+                    if sfr_hasmap1 or sfr_hasmap2 or sfr_hasmap3 or sfr_hasmap4:
+                        sfr_hasmap = True  # At least some of the maps are here
+                    else:
+                        sfr_hasmap = False # All of the maps are missing
+#                         print(name+' : '+str(sfr_hasmap))
+                # If the band is invalid:
+                else:
+                    raise ValueError('galaxies_gen() : include/exclude_missing_sfr=[\''+bands[j]+'\'] is not a valid band!')
+
+                if sfr_hasmap==False:
+                    galaxies_detectedsfr[k][i]  # Do nothing
+                else:
+                    galaxies_detectedsfr[k][i] = galaxies_detectedsfr[k][i]+1
+                    # Populate galaxies_bestres
+                    if galaxies_bestres[i]>res_quantity[k]:     # If detected resolution is better than current best:
+                        galaxies_bestres[i] = res_quantity[k]   #   Congrats, we've got a new best resolution.
+    if data_mode_sfr in ['either','both']:
+        galaxies_nosfr_7p5   = list(np.array(galaxies_set)[galaxies_detectedsfr[0]==0])
+        galaxies_somesfr_7p5 = list(np.array(galaxies_set)[(galaxies_detectedsfr[0]>0)&(galaxies_detectedsfr[0]<(len(bands)))])
+        galaxies_allsfr_7p5  = list(np.array(galaxies_set)[galaxies_detectedsfr[0]==(len(bands))])
+        galaxies_nosfr_15   = list(np.array(galaxies_set)[galaxies_detectedsfr[1]==0])
+        galaxies_somesfr_15 = list(np.array(galaxies_set)[(galaxies_detectedsfr[1]>0)&(galaxies_detectedsfr[1]<(len(bands)))])
+        galaxies_allsfr_15  = list(np.array(galaxies_set)[galaxies_detectedsfr[1]==(len(bands))])
+        galaxies_nosfr = []
+        galaxies_somesfr = []
+        galaxies_allsfr = []
+        if data_mode_sfr in ['either']:
+            for i in range(0,len(galaxies_set)):
+                if (galaxies_set[i] in galaxies_allsfr_7p5) or (galaxies_set[i] in galaxies_allsfr_15):
+                    galaxies_allsfr = np.append(galaxies_allsfr,galaxies_set[i])    # At least one res has all bands
+                elif (galaxies_set[i] in galaxies_somesfr_7p5) or (galaxies_set[i] in galaxies_somesfr_15):
+                    galaxies_somesfr = np.append(galaxies_somesfr,galaxies_set[i])  # At least 1 res has at least 1 band
+                elif (galaxies_set[i] in galaxies_nosfr_7p5) and (galaxies_set[i] in galaxies_nosfr_15):
+                    galaxies_nosfr = np.append(galaxies_nosfr,galaxies_set[i])      # Both res's have 0 bands
+                else:
+                    raise ValueError('gotta be one of them three')
+        elif data_mode_sfr in ['both']:
+            for i in range(0,len(galaxies_set)):
+                if (galaxies_set[i] in galaxies_allsfr_7p5) and (galaxies_set[i] in galaxies_allsfr_15):
+                    galaxies_allsfr = np.append(galaxies_allsfr,galaxies_set[i])    # Both res's has all bands
+                elif (galaxies_set[i] in galaxies_nosfr_7p5) and (galaxies_set[i] in galaxies_nosfr_15):
+                    galaxies_nosfr = np.append(galaxies_nosfr,galaxies_set[i])      # Both res's have 0 bands
+                else:
+                    galaxies_somesfr = np.append(galaxies_somesfr,galaxies_set[i])  # At least 1 res has at least 1 band
+    else:
+        galaxies_nosfr  = list(np.array(galaxies_set)[galaxies_detectedsfr[0]==0])
+        galaxies_somesfr  = list(np.array(galaxies_set)[(galaxies_detectedsfr[0]>0)&(galaxies_detectedsfr[0]<(len(bands)))])
+        galaxies_allsfr = list(np.array(galaxies_set)[galaxies_detectedsfr[0]==(len(bands))])
+
+    # Populate galaxies_bestcuberes
+    if cube_min_res!=999999*u.arcsec:
+        for i in range(0,len(galaxies_set_b)):  # For the remaining galaxies after the SFR-res purge:
+            name = galaxies_set_b[i]
+#             with silence():      # Best resolution, from header:
+#                 hdr = hdr_get(name,data_mode,dim=3)
+#             galaxies_bestcuberes[i] = ((hdr['BMAJ']*u.deg).to(u.rad)).value * gal_distances[i].to(u.pc)
+            with silence():      # Best pre-convolved resolution:
+                for j in [500*u.pc,750*u.pc,1000*u.pc,1250*u.pc]:
+                    mom0 = mom0_get(name,data_mode,conbeam=j)
+                    if mom0 is not None:
+                        galaxies_bestcuberes[i] = j
+                        break
+    
+    # Excluding galaxies whose CUBE+SFR resolutions are too low!
+    galaxies_bestres     = galaxies_bestres.value
+    galaxies_bestcuberes = galaxies_bestcuberes.value
+    galaxies_sfr_min_res = galaxies_sfr_min_res.value    # Remove units for easy conversions between list<->array
+    galaxies_cube_min_res = galaxies_cube_min_res.value  # Remove units for easy conversions between list<->array
+
+    # Selecting final(?) galaxies!
+    if mode=='exclusion':
+        # Exclude low inclinations?
+        if exclude_low_incl==True:
+            galaxies_set = [e for e in galaxies_set if e not in galaxies_lowincl]   # Keeps elements NOT in low_incl
+        # Exclude galaxies with missing sfr?
+        if exclude_missing_sfr!=['']:  # If SFR exclusions are specified:
+            galaxies_set = [e for e in galaxies_set if (e not in galaxies_allsfr)]  # Keeps elements NOT in allsfr
+        else:
+            galaxies_set            # Do nothing
+        # Exclude others
+        galaxies_set = [e for e in galaxies_set if e not in exclude_custom]
+    if mode=='inclusion':
+        galaxies_set = []
+        # Include low inclinations?
+        if include_low_incl==True:
+            galaxies_set = np.append(galaxies_set,galaxies_lowincl)
+        # Include galaxies with missing sfr?
+        if include_missing_sfr!=['']:
+            galaxies_set = np.append(galaxies_set,galaxies_nosfr)
+        # Include galaxies with specified sfr?
+        if include_sfr!=['']:
+            galaxies_set = np.append(galaxies_set,galaxies_allsfr)
+        # Exclude others
+        galaxies_set = [e for e in galaxies_set if e not in exclude_custom]
+        # Include others
+        if include_custom!=['']:
+            galaxies_set = np.append(galaxies_set,include_custom)
+    if mode=='':
+        # Exclude others
+        galaxies_set = [e for e in galaxies_set if e not in exclude_custom]
+    galaxies_set = list(np.sort(list(set(galaxies_set))))
+
+    # Exclude galaxies with crappy resolutions
+    galaxies_set = [e for e in galaxies_set if (galaxies_bestres[galaxies_set_b.index(e)]<=galaxies_sfr_min_res[galaxies_set_b.index(e)] \
+                                              and galaxies_bestcuberes[galaxies_set_b.index(e)]<=galaxies_cube_min_res[galaxies_set_b.index(e)])]
+
+#     return galaxies_nosfr, galaxies_somesfr, galaxies_allsfr
+    return galaxies_set
+
+def hasbar_get(galaxies_set,path='/media/jnofech/BigData/galaxies/',fname='phangs_sample_table_v1p1'):
+    '''
+    Returns an array of len(galaxies_set)
+    with each entry being True or False.
+    Can also work with a single galaxy.
+    
+    Parameters:
+    -----------
+    galaxies_set : str or list
+        Galaxy/galaxies.
+    data_mode='7m' : str
+        '7m' or '12m'.
+        (Defunct?)
+    '''
+    galaxies_set_backup = None
+    if isinstance(galaxies_set,str):
+        galaxies_set_backup = galaxies_set
+        galaxies_set = [galaxies_set]
+    galmax = len(galaxies_set)
+    hasbar = [False]*galmax
+    
+#    with silence():
+#        for i in range(0,galmax):
+#            name = galaxies_set[i]
+#            barcheck = bar_info_get(name,data_mode,radii='arcsec',check_has_bar=True,\
+#                     folder='/media/jnofech/BigData/galaxies/drive_tables/',fname='TABLE_Environmental_masks - Parameters')
+#            if barcheck=='No':
+#                hasbar[i] = False
+#            elif barcheck=='Yes':
+#                hasbar[i] = True
+#            elif barcheck=='Uncertain':
+#                hasbar[i] = None
+#            else:
+#                raise ValueError('houston we have a problem')
+
+#        print('\nMISSING BARS:')
+#        for i in range(0,len(np.where(np.array(hasbar)==None)[0])):
+#            print(galaxies_set[np.where(np.array(hasbar)==None)[0][i]])
+
+#        # Custom 'hasbar' entries!
+#        if 'NGC1317' in galaxies_set:
+#            hasbar[galaxies_set.index('NGC1317')] = True
+#        if 'NGC2090' in galaxies_set:
+#            hasbar[galaxies_set.index('NGC2090')] = False
+#        if 'NGC2283' in galaxies_set:
+#            hasbar[galaxies_set.index('NGC2283')] = True
+#        if 'NGC2566' in galaxies_set:
+#            hasbar[galaxies_set.index('NGC2566')] = True
+#        if 'NGC2835' in galaxies_set:
+#            hasbar[galaxies_set.index('NGC2835')] = True
+#        if 'NGC2997' in galaxies_set:
+#            hasbar[galaxies_set.index('NGC2997')] = False
+#        if 'NGC3059' in galaxies_set:
+#            hasbar[galaxies_set.index('NGC3059')] = True
+#        if 'NGC3137' in galaxies_set:
+#            hasbar[galaxies_set.index('NGC3137')] = False
+#        if 'NGC3621' in galaxies_set:
+#            hasbar[galaxies_set.index('NGC3621')] = False
+#        if 'NGC4457' in galaxies_set:
+#            hasbar[galaxies_set.index('NGC4457')] = False
+#        if 'NGC5128' in galaxies_set:
+#            hasbar[galaxies_set.index('NGC5128')] = False
+#        if 'NGC5530' in galaxies_set:
+#            hasbar[galaxies_set.index('NGC5530')] = False
+#        if 'NGC5643' in galaxies_set:
+#            hasbar[galaxies_set.index('NGC5643')] = True
+#        if 'NGC6300' in galaxies_set:
+#            hasbar[galaxies_set.index('NGC6300')] = True
+#        if 'NGC6744' in galaxies_set:
+#            hasbar[galaxies_set.index('NGC6744')] = True
+
+
+    table = copy.deepcopy(fits.open(path+fname+'.fits'))[1].data
+    
+    with silence():
+        for i in range(0,galmax):
+            name = galaxies_set[i]
+            if name.upper() in table.field('NAME'):
+                hasbar[i] = table.field('BAR')[list(table.field('NAME')).index(name.upper())].astype(bool)
+            else:
+                raise ValueError('tools.hasbar_get() : Galaxy \''+name+'\' not in '+path+fname+'.fits!')
+                hasbar[i] = None
+
+        print('\nMISSING BARS:')
+        for i in range(0,len(np.where(np.array(hasbar)==None)[0])):
+            print(galaxies_set[np.where(np.array(hasbar)==None)[0][i]])
+
+        hasbar = np.array(hasbar)
+
+    if isinstance(galaxies_set_backup,str):
+        return hasbar[0]
+    else:
+        return hasbar
+        
+def alphaCO21_gen(galaxies_set,rad,alpha_custom='radial',\
+                  path='/media/jnofech/BigData/galaxies/',fname='phangs_sample_table_v1p1',
+                  path_jiayi='/media/jnofech/BigData/galaxies/drive_tables/',fname_jiayi='catalog.ecsv'):
+    '''
+    Returns an array of len(galaxies_set)
+    with each entry being True or False.
+    Can also work with a single galaxy.
+    
+    Parameters:
+    -----------
+    galaxies_set : str or list
+        Galaxy/galaxies.
+    rad : u.Quantity (array-like)
+        Radii map(s), corresponding to galaxies_set.
+        Will use u.pc if a quantity is not specified.
+    alpha_custom='radial' : str
+        'radial' : Returns 2D alpha_CO(2-1) map
+        'custom' : Returns 2D alpha_CO(2-1) map, except
+                   it's just the radial version at radius Re
+                   for each galaxy
+        'constant' : Returns Milky Way(?) value (6.2)
+    '''
+    galaxies_set_backup = None
+    rad_backup      = None
+    rad_set         = copy.deepcopy(rad)
+    if isinstance(galaxies_set,str):
+        galaxies_set_backup = galaxies_set
+        rad_backup      = copy.deepcopy(rad)
+        galaxies_set = [galaxies_set]
+        rad_set      = [copy.deepcopy(rad)]
+    if not hasattr(rad_set[0],'unit'):
+        for i in range(0,len(rad_set)):
+            rad_set[i] = rad_set[i]*u.pc
+    galmax = len(galaxies_set)
+    alpha_CO21 = [None]*galmax
+
+    table = copy.deepcopy(fits.open(path+fname+'.fits'))[1].data
+    table_jiayi = Table.read(path_jiayi+fname_jiayi, format='ascii.ecsv')
+    
+    Re_mode = 'z0mgs'
+    # NOTE: Do not confused "Re" (i.e. effective radius; commonly denoted Re) 
+    #    with "R_e" (i.e. my own DiskFit errorbars).        
+        
+    with silence():
+        for i in range(0,galmax):
+            name = galaxies_set[i]
+            
+            # Get stellar mass
+            if name.upper() in table.field('NAME'):
+                logmass = table.field('LOGMSTAR')[list(table.field('NAME')).index(name.upper())]
+            else:
+                raise ValueError('tools.alphaCO21_gen() : Galaxy \''+name+'\' not in '+path+fname+'.fits!')
+                logmass = None
+                
+            # Get Re
+            if Re_mode.lower()=='z0mgs':
+                # Takes 'R_e' from the z0mgs WISE1 maps. Covers most targets, but preliminary WIP approach.
+                Re = table_jiayi.field('REFF_W1')[list(table_jiayi.field('NAME')).index(name.upper())]*u.kpc
+            elif Re_mode.lower()=='2mass':
+                # Takes 'R_e' recorded from the 2MASS Large Galaxy Atlas catalog (Jarrett+03). Don't cover full PHANGS sample.
+                Re = table_jiayi.field('REFF_K')[list(table_jiayi.field('NAME')).index(name.upper())]*u.kpc
+            else:
+                raise ValueError('Invalid Re_mode.')
+            if np.isnan(Re):
+                print('tools.alphaCO21_gen() : WARNING: '+name+' does not have "Re" value from '+Re_mode+' sample!')
+                
+            # Get metallicity array
+            if alpha_custom.lower() in ['rad','radial','2d','map']:
+                logOH = XCO.predict_metallicity(10**logmass,Rgal=rad_set[i].to(u.kpc),Re=Re,gradient='Sanchez+14')
+            elif alpha_custom.lower() in ['custom','re']:
+                logOH = rad_set[i].value*0 + XCO.predict_metallicity(10**logmass,Rgal=Re,Re=Re,gradient='Sanchez+14')
+            elif alpha_custom.lower() in ['constant']:
+                logOH = rad_set[i].value*0 + 8.7*u.K/u.K  # Unitless; the K is arbitrary
+            else:
+                raise ValueError('tools.alphaCO21_gen() : Invalid alpha_custom.')
+            Z = 10.**(logOH - 8.7)
+            alpha_CO10    = XCO.predict_alphaCO10(prescription='PHANGS',PHANGS_Zprime=Z)  # CO(1-0)-to-H2
+            alpha_CO21[i] = (alpha_CO10/0.7).value   # CO(2-1)intensity -> H2signal conversion factor
+
+        print('\nMISSING ALPHA CO(2-1):')
+        for i in range(0,len(np.where(np.array(alpha_CO21)==None)[0])):
+            print(galaxies_set[np.where(np.array(alpha_CO21)==None)[0][i]])
+        alpha_CO21 = np.array(alpha_CO21)
+
+    if isinstance(galaxies_set_backup,str):
+        return alpha_CO21[0]
+    else:
+        return alpha_CO21
+        
+def Re_get(galaxies_set,\
+           path='/media/jnofech/BigData/galaxies/',fname='phangs_sample_table_v1p1',
+           path_jiayi='/media/jnofech/BigData/galaxies/drive_tables/',fname_jiayi='catalog.ecsv'):
+    '''
+    Returns the characteristic radius
+    'Re' of given galaxy/galaxies, in kpc.
+    
+    Parameters:
+    -----------
+    galaxies_set : str or list
+        Galaxy/galaxies.
+    '''
+    galaxies_set_backup = None
+    if isinstance(galaxies_set,str):
+        galaxies_set_backup = galaxies_set
+        galaxies_set = [galaxies_set]
+    galmax = len(galaxies_set)
+    Re = [False]*galmax
+
+    table = copy.deepcopy(fits.open(path+fname+'.fits'))[1].data
+    table_jiayi = Table.read(path_jiayi+fname_jiayi, format='ascii.ecsv')
+    
+    Re_mode = 'z0mgs'
+    # NOTE: Do not confused "Re" (i.e. effective radius; commonly denoted Re) 
+    #    with "R_e" (i.e. my own DiskFit errorbars).        
+        
+    with silence():
+        for i in range(0,galmax):
+            name = galaxies_set[i]
+           
+            # Get Re, in kpc
+            if Re_mode.lower()=='z0mgs':
+                # Takes 'R_e' from the z0mgs WISE1 maps. Covers most targets, but preliminary WIP approach.
+                Re[i] = table_jiayi.field('REFF_W1')[list(table_jiayi.field('NAME')).index(name.upper())]
+            elif Re_mode.lower()=='2mass':
+                # Takes 'R_e' recorded from the 2MASS Large Galaxy Atlas catalog (Jarrett+03). Don't cover full PHANGS sample.
+                Re[i] = table_jiayi.field('REFF_K')[list(table_jiayi.field('NAME')).index(name.upper())]
+            else:
+                raise ValueError('Invalid Re_mode.')
+            if np.isnan(Re[i]):
+                print ('tools.Re_get() : WARNING: '+name+' does not have "Re" value from '+Re_mode+' sample!')
+
+        Re = np.array(Re)*u.kpc
+        
+    if isinstance(galaxies_set_backup,str):
+        return Re[0]
+    else:
+        return Re
+
+def hubbleT_get(galaxies_set,path='/media/jnofech/BigData/galaxies/',fname='phangs_sample_table_v1p1'):
+    '''
+    Returns an array of len(galaxies_set)
+    with each entry being the Hubble stage T.
+    Higher values indicate later-type galaxies.
+    Can also work with a single galaxy.
+    
+    Parameters:
+    -----------
+    galaxies_set : str or list
+        Galaxy/galaxies.
+    '''
+    galaxies_set_backup = None
+    if isinstance(galaxies_set,str):
+        galaxies_set_backup = galaxies_set
+        galaxies_set = [galaxies_set]
+    galmax = len(galaxies_set)
+    hubbleT = [False]*galmax
+
+    table = copy.deepcopy(fits.open(path+fname+'.fits'))[1].data
+    
+    with silence():
+        for i in range(0,galmax):
+            name = galaxies_set[i]
+            if name.upper() in table.field('NAME'):
+                hubbleT[i] = table.field('T')[list(table.field('NAME')).index(name.upper())]
+            else:
+                raise ValueError('tools.hubbleT_get() : Galaxy \''+name+'\' not in '+path+fname+'.fits!')
+                hubbleT[i] = None
+
+        print('\nMISSING hubbleT:')
+        for i in range(0,len(np.where(np.array(hubbleT)==None)[0])):
+            print(galaxies_set[np.where(np.array(hubbleT)==None)[0][i]])
+
+        hubbleT = np.array(hubbleT)
+
+    if isinstance(galaxies_set_backup,str):
+        return hubbleT[0]
+    else:
+        return hubbleT
