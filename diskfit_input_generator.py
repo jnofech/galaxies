@@ -995,7 +995,7 @@ def read_output(name,iteration=1,alteration=[False]*8,verbose=True,\
 def read_input(name,iteration=1,diskfit_folder='diskfit_procedural/'):
     '''
     Reads the input file for 'iteration',
-    and returns the output values as astropy
+    and returns the specified values as astropy
     Quantities. Currently only supports
     incl.
     

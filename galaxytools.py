@@ -997,8 +997,8 @@ def sfr_get(gal,hdr=None,conbeam=None,res='7p5',band_uv='nuv',band_ir='w3',autoc
         # Certain steps of this code (e.g. getting the HDU from Projection object)
         #   will alter the header, so this is necessary so that the global 'hdr'
         #   doesn't get altered as well.
-    map_uv      = band_get(gal,hdr_copy,band_uv,res,sfr_toggle=False)    # Galex NUV band.
-    map_ir      = band_get(gal,hdr_copy,band_ir,res,sfr_toggle=False)     # WISE3 band.
+    map_uv      = band_get(gal,hdr_copy,band_uv,res,sfr_toggle=False)     # Galex UV band.
+    map_ir      = band_get(gal,hdr_copy,band_ir,res,sfr_toggle=False)     # WISE IR band.
     
     # Actually generate the SFR map!
     if map_uv is not None and map_ir is not None:
@@ -2815,7 +2815,7 @@ def sfr_combine(gal,data_mode='',conbeam=None,return_mode='data', return_best=Fa
         elif return_mode.lower() in ['hdu']:
             sfr = sfr_hdu
         else:
-            print('tools.sfr_get() : Invalid "return_mode"! Must be "data" or "hdu".')
+            print('tools.sfr_combine() : Invalid "return_mode"! Must be "data" or "hdu".')
     if return_best==True:
         return sfr, sfr_best
     else:
