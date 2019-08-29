@@ -46,11 +46,25 @@ def filename_get(name,data_mode='7m',mapmode='mom1',force_same_res=False,\
                 folder_vpeak='jnofech_peakvels/',\
                 folder_hybrid='jnofech_mom1_hybrid/'):
     '''
+    Grabs filenames of V_los map, with its corresponding error map.
+    Note that only 7m mom1 data was properly tested.
+    
+    Parameters:
+    -----------
+    name : str
+        Name of galaxy.
+    data_mode='7m' : str
+        '7m', '12m', or 'hybrid' (OUTDATED) PHANGS data.
+    mapmode='mom1' : str
+        'mom1' or 'peakvels' (OUTDATED) V_los map.
+    masking='broad' : bool
+        'broad' or 'strict', matching the setting used in DiskFit.
+        We used 'broad' in thesis for its better coverage.
     force_same_res(=False) : bool
         If velocity map data exists but the error map does not
         (e.g. 7m+tp data but 7m error data), this toggles 
         whether to ignore the error map in favour of higher-res
-        data (False) or force the data to a lower res so they 
+        data (False) or force the data to the lower res so they 
         match (True).
     '''
     name = name.lower()
